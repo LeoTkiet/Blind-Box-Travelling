@@ -302,11 +302,11 @@ if __name__ == "__main__":
     if not API_KEY:
         print("Lỗi: Hãy đặt biến môi trường GEMINI_API_KEY trước khi chạy script.")
         sys.exit(1)
-        
+         
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
-    province = "Quận 5"
+    province = "Bình Thạnh"
     target_count = 2000
 
     scraper = GoogleMapsScraper(headless=False)
