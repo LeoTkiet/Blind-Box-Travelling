@@ -41,7 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 # data
-data.json
+**data.json
 
 # pycache
 __pycache__

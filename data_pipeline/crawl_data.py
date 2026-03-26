@@ -27,16 +27,6 @@ except ImportError as e:
     print("Please make sure selenium is installed: pip install selenium")
     exit(1)
 
-# Definitions for categorization
-ALLOWED_CATEGORIES = ["motel", "hotel", "museum", "restaurant", "memorial", "ruins", "cafe", "market", "attraction"]
-
-class PlaceCategory(BaseModel):
-    name: str = Field(description="Tên của địa điểm")
-    category: str = Field(description=f"Loại hình của địa điểm. Bắt buộc 1 trong 9 loại: {', '.join(ALLOWED_CATEGORIES)}")
-
-class PlacesCategorizationResponse(BaseModel):
-    places: list[PlaceCategory]
-
 class PlaceNamesResponse(BaseModel):
     names: list[str]
 
@@ -58,7 +48,7 @@ def call_gemini_with_retry(model, prompt, schema, temperature=0.7, retries=5):
             if "429" in error_msg or "quota" in error_msg.lower() or "retry" in error_msg.lower():
                 match = re.search(r"retry in (\d+(?:\.\d+)?)s", error_msg)
                 wait_time = float(match.group(1)) + 5.0 if match else 60.0
-                print(f"[!] Quota vượt hạn mức. Tạm nghỉ {wait_time:.1f} giây trước khi thử lại (lần {attempt+1}/{retries})...")
+                print(f"[!] Quota vượt hạn mức khi sinh tên. Tạm nghỉ {wait_time:.1f} giây trước khi thử lại (lần {attempt+1}/{retries})...")
                 time.sleep(wait_time)
             else:
                 print(f"[!] Lỗi khi gọi Gemini: {error_msg}")
@@ -80,6 +70,7 @@ def generate_place_names(model, province: str, count: int = 20, exclude_names: l
     prompt = f"""
     Bạn là một chuyên gia bản đồ. Hãy Liệt kê {count} TÊN ĐỊA ĐIỂM có thật tại {province}, Việt Nam. Chỉ trả về mảng các tên gọi.
     Đa dạng các thể loại: nhà nghỉ, khách sạn, resort, bảo tàng, nhà hàng, quán ăn, quán cà phê, đài tưởng niệm, khu di tích, điểm tham quan, chợ, trung tâm thương mại.
+    KHÔNG liệt kê tên các công ty, doanh nghiệp.
     {exclude_text}
     """
     
@@ -87,67 +78,6 @@ def generate_place_names(model, province: str, count: int = 20, exclude_names: l
     if data:
         return data.get("names", [])
     return []
-
-def call_gemini_categorize_places(model, places_names: List[str], retries: int = 5) -> Optional[Dict[str, str]]:
-    if not places_names:
-        return {}
-    import re
-    prompt = f"""
-    Bạn là một chuyên gia phân loại địa điểm trên bản đồ.
-    Hãy phân loại CHÍNH XÁC từng địa điểm trong danh sách {len(places_names)} địa điểm bên dưới theo đúng chức năng của nó. Bắt buộc phân loại thuộc 1 trong 9 danh mục sau đây:
-    1. motel: nhà nghỉ
-    2. hotel: khách sạn, homestay, resort, village, villa
-    3. museum: bảo tàng, phòng khám phá nghệ thuật, gallery mỹ thuật
-    4. restaurant: nhà hàng, quán ăn, quán lẩu, quán nướng, quán phở, bún, cơm, buffet, tiệm ăn (Ví dụ: "Tiệm ăn nhà khói"), tiệc cưới, pizza
-    5. memorial: tượng đài tưởng niệm, đài tự do
-    6. ruins: khu di tích, phế tích, địa đạo
-    7. cafe: quán cà phê, tiệm trà sữa, dessert bar, pub, bar
-    8. market: chợ, siêu thị, trung tâm thương mại (Ví dụ: "Thủ Đức Market", "Vincom", "Mega Market", "Co.opXtra")
-    9. attraction: điểm du lịch, công viên, đền, chùa, nhà thờ, cầu, toà nhà văn phòng, trường đại học, v.v. (Ví dụ: "Nhà thờ Đức Bà", "Đại học").
-    
-    Đặc biệt chú ý những trường hợp tên đặc thù như: "Tiệm ăn nhà khói" phải là restaurant vì "Tiệm ăn" là quán ăn. "Vincom", "Siêu thị", "Chợ", "Market" phải là market.
-    
-    DANH SÁCH ĐỊA ĐIỂM CẦN PHÂN LOẠI:
-    {json.dumps(places_names, ensure_ascii=False)}
-    """
-    
-    for attempt in range(retries):
-        try:
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json",
-                    response_schema=PlacesCategorizationResponse,
-                    temperature=0.1
-                )
-            )
-            res_json = json.loads(response.text)
-            result = {}
-            for p in res_json.get("places", []):
-                cat = p.get("category", "attraction").lower()
-                if cat not in ALLOWED_CATEGORIES:
-                    cat = "attraction"
-                result[p.get("name")] = cat
-            return result
-        except ResourceExhausted as e:
-            error_msg = str(e)
-            match = re.search(r"retry in (\d+(?:\.\d+)?)s", error_msg)
-            wait_time = float(match.group(1)) + 5.0 if match else 60.0
-            print(f"[!] Quota vượt hạn mức (429) khi phân loại. Tạm nghỉ {wait_time:.1f} giây ...")
-            time.sleep(wait_time)
-        except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg or "quota" in error_msg.lower() or "retry" in error_msg.lower():
-                match = re.search(r"retry in (\d+(?:\.\d+)?)s", error_msg)
-                wait_time = float(match.group(1)) + 5.0 if match else 60.0
-                print(f"[!] Quota vượt hạn mức khi phân loại. Tạm nghỉ {wait_time:.1f} giây ...")
-                time.sleep(wait_time)
-            else:
-                print(f"[!] Lỗi khi gọi Gemini phân loại: {error_msg}")
-                if attempt == retries - 1:
-                    return None
-                time.sleep(10)
-    return None
 
 @dataclasses.dataclass
 class RawPlace:
@@ -171,16 +101,22 @@ class RawPlace:
             "tags": self.tags
         }
 
-def map_category_fallback(raw_category: str, name: str = "") -> str:
-    raw = f"{raw_category} {name}".lower() # Use both raw_category and name for fallback mapping logic
-    if any(k in raw for k in ["nhà nghỉ", "motel"]): return "motel"
-    if any(k in raw for k in ["khách sạn", "hotel", "resort", "homestay"]): return "hotel"
-    if any(k in raw for k in ["bảo tàng", "museum", "gallery"]): return "museum"
-    if any(k in raw for k in ["nhà hàng", "quán ăn", "restaurant", "bún", "phở", "nướng", "cơm", "lẩu", "pizza", "tiệm ăn"]): return "restaurant"
-    if any(k in raw for k in ["tưởng niệm", "memorial", "đài", "lăng"]): return "memorial"
-    if any(k in raw for k in ["di tích", "phế tích", "ruin", "địa đạo"]): return "ruins"
-    if any(k in raw for k in ["cà phê", "cafe", "coffee", "trà sữa", "bar", "pub"]): return "cafe"
-    if any(k in raw for k in ["chợ", "market", "siêu thị", "vincom", "mega market"]): return "market"
+def map_category(raw_category: str, name: str = "") -> str:
+    raw = f"{raw_category} {name}".lower() # Use both raw_category and name for mapping logic
+    
+    # Loại bỏ công ty, doanh nghiệp, xí nghiệp...
+    if any(k in raw for k in ["công ty", "tnhh", "cổ phần", "cp", "jsc", "company", "co., ltd", "trách nhiệm hữu hạn", "xí nghiệp", "doanh nghiệp", "tập đoàn", "trụ sở", "head office"]): return "company"
+    
+    if any(k in raw for k in ["nhà nghỉ", "motel", "guesthouse", "guest house"]): return "motel"
+    if any(k in raw for k in ["khách sạn", "hotel", "resort", "homestay", "villa", "boutique", "retreat", "suites", "apartment", "serviced apartment", "hostel"]): return "hotel"
+    if any(k in raw for k in ["bảo tàng", "museum", "gallery", "exhibition"]): return "museum"
+    if any(k in raw for k in ["nhà hàng", "quán ăn", "restaurant", "bún", "phở", "nướng", "cơm", "lẩu", "pizza", "tiệm ăn", "bistro", "steak", "bbq", "sushi", "eatery", "cuisine", "dining", "food", "mì", "cháo", "hủ tiếu", "chè", "dimsum", "hotpot", "seafood", "hải sản", "ốc "]): return "restaurant"
+    if any(k in raw for k in ["tưởng niệm", "memorial", "đài", "lăng", "tượng đài", "bia"]): return "memorial"
+    if any(k in raw for k in ["di tích", "phế tích", "ruin", "địa đạo", "historic", "lịch sử", "heritage"]): return "ruins"
+    if any(k in raw for k in ["cà phê", "cafe", "coffee", "trà sữa", "bar", "pub", "lounge", "brewing", "craft beer", "tea", "roastery", "beverage", "baker", "bakery", "tiệm bánh"]): return "cafe"
+    if any(k in raw for k in ["chợ", "market", "siêu thị", "vincom", "mega market", "mall", "shopping", "mart", "co.op", "store", "cửa hàng", "plaza", "center"]): return "market"
+    if any(k in raw for k in ["điểm tham quan", "du lịch", "attraction", "cảnh quan", "đền", "chùa", "khu sinh thái", "công viên", "nhà thờ", "đại học", "university", "cầu", "bridge", "pagoda", "temple", "church", "cathedral", "tourist", "farm", "theatre", "rạp"]): return "attraction"
+    
     return "attraction" # default fallback
 
 class GoogleMapsScraper:
@@ -193,7 +129,6 @@ class GoogleMapsScraper:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
-        # Initialize Chrome driver
         self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10)
 
@@ -289,7 +224,7 @@ class GoogleMapsScraper:
         except NoSuchElementException:
             raw_category = "Unknown"
             
-        category = map_category_fallback(raw_category, name)
+        category = map_category(raw_category, name)
 
         rating = None
         reviews_count = None
@@ -371,7 +306,7 @@ if __name__ == "__main__":
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
-    province = "Thành phố Hồ Chí Minh"
+    province = "Thành phố Thủ Đức"
     target_count = 2000
 
     scraper = GoogleMapsScraper(headless=False)
@@ -396,10 +331,8 @@ if __name__ == "__main__":
                 time.sleep(10)
                 continue
                 
-            new_places_this_batch = []
-                
             for place_name in batch_names:
-                if len(existing_data) + len(new_places_this_batch) >= target_count:
+                if len(existing_data) >= target_count:
                     break
                 
                 if place_name.lower() in scraped_names:
@@ -413,7 +346,12 @@ if __name__ == "__main__":
                     for p in new_places:
                         p_dict = p.to_dict()
                         if p_dict.get('lat', 0.0) == 0.0 or p_dict.get('rating') is None or p_dict.get('reviews_count') is None:
-                            print(f"Google Maps thiếu dữ liệu cho '{place_name}', bỏ qua...")
+                            print(f"Google Maps thiếu dữ liệu cho '{p_dict['name']}', bỏ qua...")
+                            continue
+                            
+                        # Bỏ qua các địa điểm được nhận diện là công ty
+                        if p_dict['category'] == 'company':
+                            print(f"Bỏ qua công ty/doanh nghiệp: '{p_dict['name']}'...")
                             continue
                         
                         lat1, lng1 = p_dict['lat'], p_dict['lng']
@@ -424,41 +362,19 @@ if __name__ == "__main__":
                                 break
                                 
                         if is_too_close:
-                            print(f"Bỏ qua kết quả gần trùng lặp của '{place_name}'...")
+                            print(f"Bỏ qua kết quả gần trùng lặp của '{p_dict['name']}'...")
                             continue
                             
                         if p_dict["name"].lower() not in scraped_names:
-                            new_places_this_batch.append(p_dict)
+                            existing_data.append(p_dict)
                             scraped_names.add(p_dict["name"].lower())
                             accepted_coords_this_query.append((lat1, lng1))
+                            
+                            with open("hcm_data.json", "w", encoding="utf-8") as f:
+                                json.dump(existing_data, f, ensure_ascii=False, indent=4)
+                            print(f" [Lưu ngay] Đã thêm mới '{p_dict['name']}' ({p_dict['category']}). Tổng: {len(existing_data)}/{target_count} địa điểm.")
                 else:
                     print(f"Không tìm được trên Google Maps, bỏ qua '{place_name}'...")
-                    
-            if new_places_this_batch:
-                names_to_categorize = [p["name"] for p in new_places_this_batch]
-                print(f"\nTiến hành phân loại {len(names_to_categorize)} địa điểm mới bằng Gemini...")
-                
-                cat_batch_size = 20
-                assigned_categories = {}
-                
-                for i in range(0, len(names_to_categorize), cat_batch_size):
-                    chunk = names_to_categorize[i:i+cat_batch_size]
-                    print(f" Phân loại phần {i//cat_batch_size + 1} ({len(chunk)} địa điểm)")
-                    result_chunk = call_gemini_categorize_places(gemini_model, chunk)
-                    if result_chunk:
-                        assigned_categories.update(result_chunk)
-                    time.sleep(3)
-                
-                for p in new_places_this_batch:
-                    cat = assigned_categories.get(p["name"])
-                    if cat:
-                        p["category"] = cat
-                        print(f" -> Đã gán phân loại cho {p['name']}: {cat}")
-
-                existing_data.extend(new_places_this_batch)
-                
-                with open("hcm_data.json", "w", encoding="utf-8") as f:
-                    json.dump(existing_data, f, ensure_ascii=False, indent=4)
                     
     except KeyboardInterrupt:
         print(f"\n[!] Người dùng ngắt chương trình! Đã lưu {len(existing_data)} địa điểm vào hcm_data.json")
