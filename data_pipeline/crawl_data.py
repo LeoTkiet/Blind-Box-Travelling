@@ -306,7 +306,7 @@ if __name__ == "__main__":
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
-    province = "Thành phố Thủ Đức"
+    province = "Quận 5"
     target_count = 2000
 
     scraper = GoogleMapsScraper(headless=False)
@@ -373,6 +373,8 @@ if __name__ == "__main__":
                             with open("hcm_data.json", "w", encoding="utf-8") as f:
                                 json.dump(existing_data, f, ensure_ascii=False, indent=4)
                             print(f" [Lưu ngay] Đã thêm mới '{p_dict['name']}' ({p_dict['category']}). Tổng: {len(existing_data)}/{target_count} địa điểm.")
+                        else:
+                            print(f"Bỏ qua '{p_dict['name']}' vì đã tồn tại trong database.")
                 else:
                     print(f"Không tìm được trên Google Maps, bỏ qua '{place_name}'...")
                     
