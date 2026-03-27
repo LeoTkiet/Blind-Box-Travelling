@@ -1,12 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
-
-  const supabase = createServerClient(
+function makeClient(request: NextRequest, ref: { res: NextResponse }) {
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -15,31 +11,34 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          supabaseResponse = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          ref.res = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            ref.res.cookies.set(name, value, options)
           );
         },
       },
     }
   );
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+/** Refreshes session cookies without enforcing auth (for public pages). */
+export async function refreshSession(request: NextRequest): Promise<NextResponse> {
+  const ref = { res: NextResponse.next({ request }) };
+  const supabase = makeClient(request, ref);
+  await supabase.auth.getUser();
+  return ref.res;
+}
 
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
+/** Refreshes session and redirects to /login if not authenticated. */
+export async function requireAuth(request: NextRequest): Promise<NextResponse> {
+  const ref = { res: NextResponse.next({ request }) };
+  const supabase = makeClient(request, ref);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
-
-  return supabaseResponse;
+  return ref.res;
 }

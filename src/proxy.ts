@@ -1,8 +1,18 @@
 import { type NextRequest } from "next/server";
-import { updateSession } from "@/utils/supabase/proxy";
+import { refreshSession, requireAuth } from "@/utils/supabase/proxy";
+
+// Routes accessible without authentication
+const PUBLIC_PATHS = ["/", "/login", "/auth"];
+
+function isPublic(pathname: string): boolean {
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || (p !== "/" && pathname.startsWith(p + "/"))
+  );
+}
 
 export async function proxy(request: NextRequest) {
-  return await updateSession(request);
+  const { pathname } = request.nextUrl;
+  return isPublic(pathname) ? refreshSession(request) : requireAuth(request);
 }
 
 export const config = {
