@@ -1,0 +1,191 @@
+\documentclass[12pt]{article}
+
+\usepackage{hcmus-report-template}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{amsmath}
+
+% Disable indentation on new paragraphs
+\setlength{\parindent}{0pt}
+
+% Line spacing 1.5
+\renewcommand{\baselinestretch}{1.5}
+
+% Optional: graphic path
+ \graphicspath{PATH_TO_GRAPHIC_FOLDER}
+\usepackage{mathptmx}
+
+% To use roman section / subsection, uncomment these rows
+\renewcommand{\thesection}{\Roman{section}}
+\renewcommand{\thesubsection}{\thesection.\Roman{subsection}}
+
+% Define course name, report name and report title.
+\newcommand{\coursename}{Tư Duy Tính Toán}
+\newcommand{\reportname}{Đồ án Môn Học}
+\newcommand{\reporttitle}{Trợ lý "Du Lịch Hộp Mù" (Blind Box Travelling)}
+
+\newcommand{\studentname}{Huỳnh Tuấn Kiệt (24120356) \\ Lê Đình Huy (24120324) \\ Đinh Tiến Phát (24120405) \\ Vương Đắc Gia Khiêm (24120342) \\ Trịnh Văn Hợp (24120318) \\ Trịnh Tuấn Đạt (24120285) \\ Hồ Văn Lực (24120374)}
+\newcommand{\teachername}{GS. TS. Nguyễn Văn Hướng Dẫn}
+
+% Header
+\lhead{\reporttitle}
+\rhead{
+Trường Đại học Khoa học Tự nhiên - ĐHQG HCM\\
+\coursename
+}
+
+% Footer
+
+
+% ============ DOCUMENT ============
+\begin{document}
+
+\pagenumbering{roman}
+\input{content/title.tex} 
+
+\tableofcontents
+\pagebreak
+\listoftables
+\pagebreak
+\listoffigures
+\pagebreak
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% ============ NỘI DUNG BÁO CÁO ============
+
+\section{Phân tích \& Xác định bài toán}
+\subsection{Bối cảnh thực tế}
+Giới trẻ hiện nay thường gặp tình trạng "quá tải sự lựa chọn" khi quyết định địa điểm ăn uống, giải trí (hội chứng FOMO và mệt mỏi khi quyết định). Xu hướng "Hộp mù" (Blind box) đang thịnh hành vì mang lại cảm giác bất ngờ và thú vị. Việc kết hợp bản đồ số, AI và trải nghiệm "hộp mù" giải quyết trực tiếp nhu cầu tìm kiếm sự mới mẻ một cách tiện lợi.
+
+\subsection{Xác định Input / Output}
+Bài toán được chuyển từ yêu cầu mơ hồ sang các tham số có thể xử lý rõ ràng:
+\begin{itemize}
+    \item \textbf{Input:} 
+    \begin{itemize}
+        \item Tọa độ GPS hiện tại của Client: $(Lat_{current}, Lng_{current})$.
+        \item Bán kính di chuyển tối đa: $R$ (km).
+        \item Thể loại yêu thích: $Category$ (VD: Cafe, Ăn vặt).
+        \item Dữ liệu nhóm (Group mode): Danh sách sở thích của $n$ thành viên.
+    \end{itemize}
+    \item \textbf{Output:} 
+    \begin{itemize}
+        \item Tọa độ điểm đến duy nhất (bị ẩn tên): $(Lat_{target}, Lng_{target})$.
+        \item Đoạn văn 30 từ do AI gợi ý về không gian (gợi sự tò mò).
+        \item Danh sách vật dụng cần mang (dựa trên thời tiết thực tế).
+        \item Quỹ tiền dự kiến phải chia đều cho nhóm.
+    \end{itemize}
+\end{itemize}
+
+\section{Phân rã \& Nhận diện mẫu}
+Hệ thống được phân rã thành các module logic chạy độc lập nhưng liên kết chặt chẽ. Cấu trúc tuân theo mẫu (Pattern) chung: Thu thập $\rightarrow$ Lọc $\rightarrow$ Xếp hạng $\rightarrow$ Hiển thị.
+\begin{enumerate}
+    \item \textbf{Thu thập:} Cào dữ liệu offline (Python) $\rightarrow$ Clean $\rightarrow$ Supabase (Data Warehouse).
+    \item \textbf{Input:} Geolocation API lấy tọa độ; Supabase Realtime gom nhóm và tính trung bình sở thích.
+    \item \textbf{Lọc \& Xếp hạng:} Thuật toán "Hidden Gem" query vào Database, lọc theo bán kính và tính điểm.
+    \item \textbf{Gia tăng giá trị:} Tích hợp OpenWeatherMap + Gemini API sinh nội dung gợi ý.
+    \item \textbf{Hiển thị \& Điều hướng:} Mapbox API dẫn đường, Canvas-confetti tạo hiệu ứng khi khoảng cách $< 200m$.
+\end{enumerate}
+
+\section{Trừu tượng hóa}
+Để hệ thống chạy mượt mà trên Next.js và tối ưu hóa hiệu suất cơ sở dữ liệu, bài toán được trừu tượng hóa:
+\begin{itemize}
+    \item \textbf{Bỏ chi tiết thừa:} Không lưu trữ toàn bộ thực đơn, không lưu chi tiết từng bình luận của khách hàng, bỏ qua hình ảnh độ phân giải cao tại database lõi.
+    \item \textbf{Giữ yếu tố cốt lõi:} Chỉ lưu trữ Tọa độ (Point geometry), Rating trung bình, Tổng số lượt đánh giá, và các Tags phân loại.
+    \item \textbf{AI Hỗ trợ trích xuất dữ liệu:} Thay vì dùng thuật toán đọc hiểu văn bản thuần túy, sử dụng AI duyệt qua dữ liệu thô để gán nhãn tự động. Trong runtime, AI sinh ra các insights ngắn gọn thay vì hiển thị dữ liệu thô cho người dùng.
+\end{itemize}
+
+\section{Thiết kế thuật toán \& Biểu diễn}
+\subsection{Thuật toán "Hidden Gem"}
+\subsubsection{Hàm tính khoảng cách Haversine}
+Sử dụng để tính khoảng cách giữa hai tọa độ trên bề mặt trái đất.
+\begin{equation}
+a = \sin^2\left(\frac{\Delta\phi}{2}\right) + \cos\phi_1 \cdot \cos\phi_2 \cdot \sin^2\left(\frac{\Delta\lambda}{2}\right)
+\end{equation}
+\begin{equation}
+d = R \cdot 2 \cdot \text{atan2}(\sqrt{a}, \sqrt{1-a})
+\end{equation}
+Trong đó $R = 6371$ km.
+
+\subsubsection{Thuật toán tính điểm Hộp mù}
+Mục tiêu là tìm ra các địa điểm có chất lượng tốt nhưng ít phổ biến.
+\begin{itemize}
+    \item \textbf{Quality Score ($S_q$):} Điểm đánh giá (rating) / 5.0.
+    \item \textbf{Anonymity Score ($S_a$):} Đo mức độ "bí ẩn". Càng ít bài đánh giá (reviews), điểm càng cao.
+    \begin{equation}
+    S_a = 1 - \frac{\log_{10}(\text{reviews\_count} + 1)}{\log_{10}(\text{max\_reviews\_in\_area} + 1)}
+    \end{equation}
+    \item \textbf{Random Score ($S_r$):} Điểm ngẫu nhiên để tạo yếu tố bất ngờ.
+\end{itemize}
+
+\textbf{Công thức tổng hợp:}
+\begin{equation}
+\text{TotalScore} = (S_q \times 0.4) + (S_a \times 0.4) + (S_r \times 0.2)
+\end{equation}
+
+\subsection{Pseudocode (Quy trình ghép nhóm \& Gợi ý)}
+\begin{algorithm}[H]
+\caption{Thuật toán Group Match \& Tìm Hidden Gem}
+\begin{algorithmic}[1]
+\Require Nhóm $G$ gồm $n$ user, Bán kính $R$, GPS hiện tại $(lat, lng)$
+\Ensure Điểm đến $Target$, Lời khuyên $AI\_Advice$
+\State $Avg\_Preferences \gets \text{CalculateAverage}(G)$
+\State $Valid\_Locations \gets \text{QuerySupabase}(lat, lng, R, Avg\_Preferences)$
+\For{each $loc \in Valid\_Locations$}
+    \State $Score[loc] \gets (\alpha \cdot loc.Rating) - (\beta \cdot \ln(loc.RevCount)) + \gamma \cdot \text{rand()}$
+\EndFor
+\State $Target \gets \text{MaxScore}(Valid\_Locations, Score)$
+\State $Weather \gets \text{OpenWeatherAPI}(Target.lat, Target.lng)$
+\State $Prompt \gets \text{"Dua vao: "} + Target.tags + \text{ va } + Weather$
+\State $AI\_Advice \gets \text{GeminiAPI}(Prompt)$
+\State \Return $Target$, $AI\_Advice$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Triển khai mô phỏng}
+Hệ thống được thiết kế với kiến trúc hiện đại, khả năng scale tốt:
+\begin{itemize}
+    \item \textbf{Backend \& Realtime:} Sử dụng Supabase PostgreSQL có hỗ trợ PostGIS tính toán khoảng cách tọa độ nhanh chóng. Edge Functions của Supabase xử lý logic Hidden Gem.
+    \item \textbf{Tích hợp AI:} Module gọi Gemini API (Mô phỏng bằng Node.js fetch).
+\end{itemize}
+
+\textbf{Đoạn mã mô phỏng tích hợp Gemini AI (Next.js Server Action):}
+\begin{lstlisting}[basicstyle=\footnotesize\ttfamily, frame=single]
+import { GoogleGenerativeAI } from "@google/generative-ai";
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+export async function generateBlindBoxClue(locationTags, weather) {
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const prompt = `Viet 30 tu mieu ta bi an ve mot dia diem co cac 
+  dac diem: ${locationTags}. Thoi tiet hien tai: ${weather}. 
+  Goi y 2 mon do mang theo. Khong nhac ten quan.`;
+  
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+\end{lstlisting}
+
+\section{Kiểm thử \& Cải tiến}
+\subsection{Kịch bản kiểm thử (Test Cases)}
+\begin{itemize}
+    \item \textbf{Kịch bản 1 (Mất sóng GPS):} Hệ thống yêu cầu user chọn điểm xuất phát thủ công trên bản đồ.
+    \item \textbf{Kịch bản 2 (Nhóm có sở thích trái ngược):} Thuật toán Realtime ghi nhận mâu thuẫn, tự động kích hoạt mode "Cưa đôi" (Random theo sở thích của 2 phe) hoặc chọn một địa điểm Trung tính.
+    \item \textbf{Kịch bản 3 (Vùng ven/Không có quán):} Nếu bán kính $R$ trả về rỗng, hệ thống tự động gọi đệ quy tăng $R$ lên $1.5 \times R$ hoặc cảnh báo mở rộng khu vực.
+\end{itemize}
+\subsection{Đề xuất cải tiến}
+\begin{itemize}
+    \item Tích hợp Machine Learning để học hỏi lịch sử "Mở hộp" của người dùng, từ đó tinh chỉnh hệ số $\alpha, \beta$ cá nhân hóa.
+    \item Sử dụng Augmented Reality (AR) thay vì hiệu ứng 2D để khi đến nơi, người dùng dùng camera quét không gian mở khóa tên quán.
+\end{itemize}
+
+% References (Nếu bạn có file ref.tex thì mở comment)
+% \input{ref/ref.tex}
+
+% Appendix (Nếu bạn có file appendix.tex thì mở comment)
+% \appendix
+% \cleardoublepage
+% \input{appendix/appendix.tex}
+
+\end{document}
