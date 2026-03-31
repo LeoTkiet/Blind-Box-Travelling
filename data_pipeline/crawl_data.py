@@ -306,8 +306,8 @@ if __name__ == "__main__":
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
-    province = "Quận 4"
-    target_count = 3000
+    province = "Quận 11"
+    target_count = 5000
 
     scraper = GoogleMapsScraper(headless=False)
     
