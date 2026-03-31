@@ -306,8 +306,13 @@ if __name__ == "__main__":
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
+<<<<<<< Updated upstream
     province = "Bình Thạnh"
     target_count = 2000
+=======
+    province = "Quận 4"
+    target_count = 3000
+>>>>>>> Stashed changes
 
     scraper = GoogleMapsScraper(headless=False)
     
