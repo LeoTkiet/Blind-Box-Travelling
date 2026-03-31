@@ -55,25 +55,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Không tìm thấy địa điểm trong bán kính ${radius} km. Hãy thử tăng khoảng cách.` }, { status: 404 });
     }
 
-    // ── Hidden Gem Scoring Algorithm ──
+    // ── Optimized Hidden Gem Scoring Algorithm ──
+
     const maxReviews = Math.max(...nearby.map((l) => l.reviews_count ?? 0), 1);
+
+    // 1. Calculate variables for Bayesian Average
+    // m: Average rating of all locations in the area
+    const totalRating = nearby.reduce((sum, loc) => sum + (loc.rating ?? 0), 0);
+    const m = nearby.length > 0 ? totalRating / nearby.length : 0;
+    // C: Confidence constant (needs about 15 reviews for the rating to carry actual weight)
+    const C = 15;
 
     const scored = nearby.map((loc) => {
       const rating = loc.rating ?? 0;
       const reviewsCount = loc.reviews_count ?? 0;
 
-      // Quality score: higher rating = higher score (0–1)
-      const qualityScore = rating / 5.0;
+      // Quality Score (Sq): Use Bayesian Average instead of raw rating
+      // Pulls the score of places with few reviews towards the area average
+      const bayesianRating = (reviewsCount * rating + C * m) / (reviewsCount + C);
+      const qualityScore = bayesianRating / 5.0;
 
-      // Anonymity score: fewer reviews = higher score (0–1)
-      // Uses log scale so a place with 10 reviews vs 1000 reviews is meaningfully different
-      const anonymityScore = 1 - Math.log10(reviewsCount + 1) / Math.log10(maxReviews + 1);
+      // Anonymity Score (Sa): Eliminate highly unreliable places (< 10 reviews)
+      // Only reward anonymity if the place has enough reviews to prove it exists and is decent
+      let anonymityScore = 0;
+      if (reviewsCount >= 10) {
+        anonymityScore = 1 - Math.log10(reviewsCount + 1) / Math.log10(maxReviews + 1);
+      }
 
-      // Random factor for surprise element (0–1)
+      // Random factor (Sr) for the surprise element (0–1)
       const randomScore = Math.random();
 
-      // Weighted total: 40% quality + 40% anonymity + 20% random
-      const totalScore = qualityScore * 0.4 + anonymityScore * 0.4 + randomScore * 0.2;
+      // New weighted total: 45% Quality + 30% Anonymity + 25% Random
+      const totalScore = (qualityScore * 0.45) + (anonymityScore * 0.30) + (randomScore * 0.25);
 
       return { ...loc, _score: totalScore };
     });
@@ -81,6 +94,7 @@ export async function POST(request: Request) {
     // Sort descending and return the top result
     scored.sort((a, b) => b._score - a._score);
     const winner = scored[0];
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { _score, ...location } = winner;
 
