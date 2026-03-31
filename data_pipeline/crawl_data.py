@@ -104,8 +104,8 @@ class RawPlace:
 def map_category(raw_category: str, name: str = "") -> str:
     raw = f"{raw_category} {name}".lower() # Use both raw_category and name for mapping logic
     
-    # Loại bỏ công ty, doanh nghiệp, xí nghiệp...
-    if any(k in raw for k in ["công ty", "tnhh", "cổ phần", "cp", "jsc", "company", "co., ltd", "trách nhiệm hữu hạn", "xí nghiệp", "doanh nghiệp", "tập đoàn", "trụ sở", "head office"]): return "company"
+    # exclude company, business, factory, etc.
+    if any(k in raw for k in ["công ty", "tnhh", "cổ phần", "cp", "jsc", "company", "co., ltd", "trách nhiệm hữu hạn", "xí nghiệp", "doanh nghiệp", "tập đoàn", "trụ sở", "head office", "nhà trọ", "trọ", "thuốc"]): return "company"
     
     if any(k in raw for k in ["nhà nghỉ", "motel", "guesthouse", "guest house"]): return "motel"
     if any(k in raw for k in ["khách sạn", "hotel", "resort", "homestay", "villa", "boutique", "retreat", "suites", "apartment", "serviced apartment", "hostel"]): return "hotel"
@@ -306,13 +306,8 @@ if __name__ == "__main__":
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
-<<<<<<< Updated upstream
     province = "Bình Thạnh"
     target_count = 2000
-=======
-    province = "Quận 4"
-    target_count = 3000
->>>>>>> Stashed changes
 
     scraper = GoogleMapsScraper(headless=False)
     
