@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { UserLocation, LocationResult } from "./AppContent";
 
 const CATEGORIES = [
@@ -44,6 +44,18 @@ export default function BlindBoxPanel({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync GPS button state when location is set externally (e.g. ChatBox "Bật định vị")
+  useEffect(() => {
+    if (userLocation && gpsStatus === "idle") {
+      setGpsStatus("done");
+      setMode("gps");
+    }
+    if (!userLocation) {
+      setGpsStatus("idle");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation]);
 
   const handleGPS = useCallback(() => {
     setGpsStatus("loading");

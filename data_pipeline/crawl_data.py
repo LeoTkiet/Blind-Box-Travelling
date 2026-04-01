@@ -306,18 +306,18 @@ if __name__ == "__main__":
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
-    province = "Bình Thạnh"
-    target_count = 2000
+    province = "Huyện Xuyên Mộc , Bà Rịa - Vũng Tàu"
+    target_count = 5000
 
     scraper = GoogleMapsScraper(headless=False)
     
     try:
         existing_data = []
-        if os.path.exists("hcm_data.json"):
-            with open("hcm_data.json", "r", encoding="utf-8") as f:
+        if os.path.exists("vungtau_data.json"):
+            with open("vungtau_data.json", "r", encoding="utf-8") as f:
                 try:
                     existing_data = json.load(f)
-                    print(f"Đã load {len(existing_data)} địa điểm từ hcm_data.json")
+                    print(f"Đã load {len(existing_data)} địa điểm từ vungtau_data.json")
                 except json.JSONDecodeError:
                     pass
 
@@ -370,7 +370,7 @@ if __name__ == "__main__":
                             scraped_names.add(p_dict["name"].lower())
                             accepted_coords_this_query.append((lat1, lng1))
                             
-                            with open("hcm_data.json", "w", encoding="utf-8") as f:
+                            with open("vungtau_data.json", "w", encoding="utf-8") as f:
                                 json.dump(existing_data, f, ensure_ascii=False, indent=4)
                             print(f" [Lưu ngay] Đã thêm mới '{p_dict['name']}' ({p_dict['category']}). Tổng: {len(existing_data)}/{target_count} địa điểm.")
                         else:
@@ -379,7 +379,7 @@ if __name__ == "__main__":
                     print(f"Không tìm được trên Google Maps, bỏ qua '{place_name}'...")
                     
     except KeyboardInterrupt:
-        print(f"\n[!] Người dùng ngắt chương trình! Đã lưu {len(existing_data)} địa điểm vào hcm_data.json")
+        print(f"\n[!] Người dùng ngắt chương trình! Đã lưu {len(existing_data)} địa điểm vào vungtau_data.json")
     except Exception as e:
         print(f"\n[!] Lỗi bất ngờ: {e}")
     finally:
