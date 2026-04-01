@@ -31,11 +31,11 @@ interface LocationInfo {
 interface Props {
     userLocation: UserLocation | null;
     result: LocationResult | null;
-    /** Called when ChatBox successfully obtains a GPS position — syncs to AppContent */
+    /** Gọi khi ChatBox lấy được GPS thành công — đồng bộ ngược lên AppContent */
     onLocationUpdate: (loc: UserLocation) => void;
 }
 
-// ─── Markdown renderer ────────────────────────────────────────────────────────
+// Trình xử lý Markdown
 function MarkdownMessage({ text }: { text: string }) {
     const blocks = text.split(/\n{2,}/);
     return (
@@ -110,7 +110,7 @@ function renderInline(text: string): React.ReactNode {
     });
 }
 
-// ─── Suggestion chips ─────────────────────────────────────────────────────────
+// Các nút Gợi ý
 function SuggestionChips({ suggestions, onSelect }: { suggestions: string[]; onSelect: (s: string) => void }) {
     return (
         <div className="flex flex-wrap gap-1.5 mt-2.5">
@@ -127,7 +127,7 @@ function SuggestionChips({ suggestions, onSelect }: { suggestions: string[]; onS
     );
 }
 
-// ─── Location request card ────────────────────────────────────────────────────
+// Thẻ Yêu cầu Cấp quyền Vị trí
 function LocationRequestCard({ onRequest, isLoading }: { onRequest: () => void; isLoading: boolean }) {
     return (
         <div className="mx-0 my-1 rounded-2xl border border-gray-100 bg-gray-50 p-4">
@@ -155,7 +155,7 @@ function LocationRequestCard({ onRequest, isLoading }: { onRequest: () => void; 
     );
 }
 
-// ─── Main ChatBox ─────────────────────────────────────────────────────────────
+// Component ChatBox Chính
 export default function ChatBox({ userLocation, result, onLocationUpdate }: Props) {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([
@@ -181,14 +181,13 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // When userLocation changes from outside (e.g. BlindBoxPanel GPS), fetch details
+    // Tự động lấy chi tiết địa điểm khi userLocation thay đổi từ bên ngoài 
     useEffect(() => {
         if (!userLocation) return;
         const key = `${userLocation.lat},${userLocation.lng}`;
         if (key === prevLocationRef.current) return;
         prevLocationRef.current = key;
         fetchLocationDetails(userLocation.lat, userLocation.lng);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userLocation]);
 
     const fetchLocationDetails = useCallback(async (lat: number, lng: number) => {
@@ -225,9 +224,8 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
     }, []);
 
     /**
-     * Called by the "Bật định vị" card inside the chat.
-     * Uses browser Geolocation API → updates both ChatBox state AND AppContent
-     * via onLocationUpdate so BlindBoxPanel + MapView also get the position.
+     * Xử lý khi bấm nút "Bật định vị" trực tiếp trong chat.
+     * Dùng API Geolocation của trình duyệt → cập nhật State cho ChatBox VÀ AppContent.
      */
     const handleRequestLocation = useCallback(() => {
         if (!navigator.geolocation) {
@@ -244,14 +242,12 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
                     lat: pos.coords.latitude,
                     lng: pos.coords.longitude,
                 };
-                // ← Sync to AppContent (BlindBoxPanel + MapView)
+                // ← Đồng bộ lên Component Cha (để truyền cho Bản đồ & Bảng điều khiển)
                 onLocationUpdate(loc);
-                // fetchLocationDetails will also be triggered via the useEffect
-                // above when userLocation prop updates, but we call it directly
-                // here too so the chat responds immediately without waiting for
-                // the prop to propagate through React.
+
+                // Gọi API ngay lập tức để chat phản hồi nhanh mà không cần đợi React re-render
                 const key = `${loc.lat},${loc.lng}`;
-                prevLocationRef.current = key; // prevent double-fetch
+                prevLocationRef.current = key;
                 fetchLocationDetails(loc.lat, loc.lng);
             },
             (err) => {
@@ -269,7 +265,7 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
 
     const handleRefreshLocation = useCallback(() => {
         if (userLocation) {
-            prevLocationRef.current = ""; // force re-fetch
+            prevLocationRef.current = ""; // Xóa bộ nhớ đệm để ép gọi lại API
             fetchLocationDetails(userLocation.lat, userLocation.lng);
         } else {
             handleRequestLocation();
@@ -341,7 +337,7 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
 
     const unreadCount = Math.max(0, messages.filter((m) => m.type === "bot").length - 1);
 
-    // ── FAB ──────────────────────────────────────────────────────────────────
+    // Nút nổi mở Chat
     if (!isOpen) {
         return (
             <button
@@ -364,11 +360,11 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
         );
     }
 
-    // ── Chat panel ────────────────────────────────────────────────────────────
+    // Khung Chat chính
     return (
         <div className="fixed bottom-6 right-6 w-[380px] h-[600px] bg-white rounded-2xl shadow-2xl flex flex-col z-40 border border-gray-100 overflow-hidden">
 
-            {/* Header */}
+            {/* Thanh Tiêu đề (Header) */}
             <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
                 <div className="relative flex-shrink-0">
                     <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center">
@@ -388,7 +384,7 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
                     )}
                 </div>
 
-                {/* Refresh button — only when location already loaded */}
+                {/* Nút Làm mới — chỉ hiện thị khi đã có thông tin vị trí */}
                 {locationInfo && (
                     <button
                         onClick={handleRefreshLocation}
@@ -408,7 +404,7 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
                 </button>
             </div>
 
-            {/* Messages */}
+            {/* Khu vực Tin nhắn */}
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 scroll-smooth">
 
                 {error && (
@@ -456,12 +452,12 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
                     </div>
                 ))}
 
-                {/* Location request card — inline in thread, only when no location */}
+                {/* Thẻ yêu cầu định vị — hiển thị ngay trong chat nếu chưa có tọa độ */}
                 {!userLocation && !isFetchingLocation && (
                     <LocationRequestCard onRequest={handleRequestLocation} isLoading={isFetchingLocation} />
                 )}
 
-                {/* Typing / loading indicator */}
+                {/* Hiệu ứng Đang gõ / Đang tải (Typing indicator) */}
                 {(isLoading || isFetchingLocation) && (
                     <div className="flex gap-2 justify-start">
                         <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
@@ -482,7 +478,7 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
+            {/* Khu vực Nhập tin nhắn */}
             <div className="px-4 py-3 border-t border-gray-100 bg-white">
                 <form onSubmit={handleSubmit} className="flex items-center gap-2">
                     <input

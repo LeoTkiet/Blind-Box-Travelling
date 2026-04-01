@@ -23,11 +23,77 @@ interface ChatRequest {
     }>;
 }
 
+function buildSystemPrompt(context: ChatRequest["context"] = {}): string {
+    const { currentLocation, suggestedPlaces = [], currentResult } = context;
+
+    // Khối thông tin Vị trí
+    const locationBlock = currentLocation
+        ? `## Vị trí người dùng
+Địa chỉ: ${currentLocation.address}
+Tọa độ: ${currentLocation.lat.toFixed(5)}, ${currentLocation.lng.toFixed(5)}`
+        : `## Vị trí người dùng
+Người dùng chưa chia sẻ vị trí.`;
+
+    // Khối thông tin Địa điểm lân cận
+    const nearbyBlock =
+        suggestedPlaces.length > 0
+            ? `## Địa điểm gần đây (đã được xác minh qua API)
+${suggestedPlaces
+                .slice(0, 8)
+                .map(
+                    (p, i) =>
+                        `${i + 1}. **${p.name}**` +
+                        (p.category ? ` — ${p.category}` : "") +
+                        (p.rating ? ` | ⭐ ${p.rating}` : "") +
+                        (p.distance ? ` | ${p.distance}` : "") +
+                        (p.address ? `\n   📍 ${p.address}` : "")
+                )
+                .join("\n")}
+
+Khi người dùng hỏi về địa điểm gần đây, ưu tiên giới thiệu từ danh sách trên. Đừng bịa thêm địa điểm không có trong danh sách.`
+            : `## Địa điểm gần đây
+Chưa có dữ liệu địa điểm gần đây.`;
+
+    // Khối kết quả Hộp mù hiện tại
+    const resultBlock = currentResult
+        ? `## Địa điểm hộp mù vừa được tạo
+Tên: ${currentResult.name}
+Loại: ${currentResult.category}
+Đánh giá: ⭐ ${currentResult.rating}/5
+Địa chỉ: ${currentResult.address ?? "Không có"}
+
+Nếu người dùng hỏi về địa điểm này, hãy cung cấp thông tin chi tiết và gợi ý trải nghiệm phù hợp.`
+        : "";
+
+    // Lắp ráp Prompt hoàn chỉnh
+    return `Bạn là **Travel Assistant** của ứng dụng **Blind Box Travelling** — một trợ lý du lịch thông minh giúp người dùng khám phá những địa điểm thú vị bất ngờ gần họ.
+
+${locationBlock}
+
+${nearbyBlock}
+
+${resultBlock}
+
+## Phong cách trả lời
+- Ngôn ngữ: **Tiếng Việt** hoàn toàn, tự nhiên và thân thiện
+- Độ dài: Ngắn gọn, súc tích — tối đa 2–3 đoạn ngắn hoặc 1 danh sách 3–5 mục
+- Định dạng: Dùng **markdown nhẹ** (bold, danh sách gạch đầu dòng) để dễ đọc
+- Giọng điệu: Như một người bạn am hiểu địa phương, nhiệt tình nhưng không sến
+
+## Quy tắc xử lý
+1. **Địa điểm gần đây**: Chỉ giới thiệu từ danh sách đã xác minh ở trên. Nếu danh sách trống, thành thật nói chưa có dữ liệu và gợi ý người dùng bật định vị.
+2. **Thông tin ngoài danh sách** (giờ mở cửa, giá vé, menu...): Có thể cung cấp dựa trên kiến thức chung nhưng phải nói rõ "thông thường" hoặc "bạn nên kiểm tra lại trước khi đến".
+3. **Gợi ý lịch trình**: Kết hợp địa điểm trong danh sách với thời gian, khoảng cách hợp lý.
+4. **Câu hỏi ngoài phạm vi du lịch**: Lịch sự từ chối và hướng về chủ đề khám phá địa điểm.
+5. **Không có vị trí**: Khuyến khích người dùng bật định vị để nhận gợi ý chính xác hơn.
+6. **Kết thúc hội thoại**: Có thể đặt 1 câu hỏi ngắn để tiếp tục gợi ý (ví dụ: "Bạn thích ăn sáng hay cà phê trước?").`;
+}
+
 export async function POST(request: NextRequest) {
     try {
         if (!GROQ_API_KEY) {
             return NextResponse.json(
-                { error: "GROQ_API_KEY không được cấu hình. Hãy thêm nó vào .env.local" },
+                { error: "GROQ_API_KEY chưa được cấu hình trong .env.local" },
                 { status: 500 }
             );
         }
@@ -35,57 +101,21 @@ export async function POST(request: NextRequest) {
         const body: ChatRequest = await request.json();
         const { message, context = {}, conversationHistory = [] } = body;
 
-        if (!message || typeof message !== "string") {
-            return NextResponse.json(
-                { error: "Tin nhắn không hợp lệ" },
-                { status: 400 }
-            );
+        if (!message || typeof message !== "string" || !message.trim()) {
+            return NextResponse.json({ error: "Tin nhắn không hợp lệ" }, { status: 400 });
         }
 
-        // Build location info string
-        const locationInfo = context.currentLocation
-            ? `Vị trí hiện tại: ${context.currentLocation.address}\nĐịa điểm gần đây:\n${context.suggestedPlaces
-                ?.slice(0, 5)
-                .map((p, i) => `${i + 1}. ${p.name} - ${p.category} (⭐ ${p.rating || "N/A"})`)
-                .join("\n") || "Không tìm thấy địa điểm"}`
-            : "Người dùng chưa chia sẻ vị trí";
+        const systemPrompt = buildSystemPrompt(context);
 
-        // Build system prompt with real location data
-        const systemPrompt = `Bạn là "Travel Assistant" - một trợ lý AI chuyên về du lịch cho ứng dụng "Blind Box Travelling".
-
-**Vị trí & Gợi ý hiện tại:**
-${locationInfo}
-
-**Địa điểm đang xem:** ${context.currentResult
-                ? `${context.currentResult.name} (${context.currentResult.category}, ⭐ ${context.currentResult.rating}%)`
-                : "Chưa có"
-            }
-
-**Hướng dẫn:**
-1. Là thân thiện, nhiệt tình và chuyên nghiệp
-2. Trả lời LUÔN bằng tiếng Việt
-3. Nếu được hỏi về những địa điểm gần đây, gợi ý từ danh sách trên
-4. Cung cấp thông tin du lịch: giờ mở cửa, giá vé, đánh giá
-5. Gợi ý lịch trình dựa trên sở thích của người dùng
-6. Giữ câu trả lời ngắn gọn & hữu ích (dưới 300 ký tự)
-7. Nếu không chắc, hãy ngoài hiệu hợp lý dựa trên kiến thức du lịch
-8. Luôn khuyến khích người dùng khám phá thêm`;
-
-        // Build conversation history for messages
+        // Lấy 8 tin nhắn gần nhất (4 lượt trao đổi) — đủ ngữ cảnh mà không làm tốn token
         const messageHistory = conversationHistory
-            .slice(-5) // Only last 5 messages for context
+            .slice(-8)
             .map((msg) => ({
                 role: msg.type === "user" ? "user" : "assistant",
                 content: msg.text,
             }));
 
-        // Add current message
-        messageHistory.push({
-            role: "user",
-            content: message,
-        });
-
-        console.log("Calling Groq API with location context...");
+        messageHistory.push({ role: "user", content: message.trim() });
 
         const response = await fetch(GROQ_API_URL, {
             method: "POST",
@@ -94,49 +124,39 @@ ${locationInfo}
                 Authorization: `Bearer ${GROQ_API_KEY}`,
             },
             body: JSON.stringify({
-                model: "llama-3.1-8b-instant", // Free tier optimized - fast & efficient
+                model: "llama-3.3-70b-versatile", // Khả năng suy luận tốt hơn, vẫn nằm trong gói miễn phí của Groq
                 messages: [
-                    {
-                        role: "system",
-                        content: systemPrompt,
-                    },
+                    { role: "system", content: systemPrompt },
                     ...messageHistory,
                 ],
-                temperature: 0.7,
-                max_tokens: 500,
+                temperature: 0.6,   // Giảm nhẹ nhiệt độ → câu trả lời ổn định hơn, ít bị ảo giác
+                max_tokens: 600,    // Đủ độ dài cho 2–3 đoạn văn có định dạng markdown
+                top_p: 0.9,
+                stream: false,
             }),
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            console.error("Groq API Error:", {
-                status: response.status,
-                error: errorData,
-            });
+            console.error("Groq API Error:", response.status, errorData);
             return NextResponse.json(
-                {
-                    error: `Groq API Error: ${errorData.error?.message || "Lỗi xử lý chat"}`,
-                },
+                { error: errorData.error?.message ?? "Lỗi từ Groq API" },
                 { status: response.status }
             );
         }
 
         const data = await response.json();
-
-        // Extract text from response
         const reply =
             data.choices?.[0]?.message?.content?.trim() ||
-            "Xin lỗi, tôi không thể trả lời câu hỏi này.";
+            "Xin lỗi, tôi chưa thể trả lời câu hỏi này. Bạn thử hỏi lại theo cách khác nhé!";
 
         return NextResponse.json({ reply });
     } catch (error) {
         console.error("Chat API Error:", error);
-        const errorMessage =
-            error instanceof Error ? error.message : "Có lỗi xảy ra khi xử lý yêu cầu";
         return NextResponse.json(
             {
-                error: errorMessage,
-                hint: "Kiểm tra API key hoặc kết nối internet",
+                error: error instanceof Error ? error.message : "Lỗi không xác định",
+                hint: "Kiểm tra GROQ_API_KEY và kết nối mạng",
             },
             { status: 500 }
         );

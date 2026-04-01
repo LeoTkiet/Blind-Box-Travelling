@@ -45,7 +45,7 @@ export default function BlindBoxPanel({
   const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync GPS button state when location is set externally (e.g. ChatBox "Bật định vị")
+  // Đồng bộ hóa tính năng lấy vị trí của GPS và ChatBox
   useEffect(() => {
     if (userLocation && gpsStatus === "idle") {
       setGpsStatus("done");
@@ -54,7 +54,6 @@ export default function BlindBoxPanel({
     if (!userLocation) {
       setGpsStatus("idle");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userLocation]);
 
   const handleGPS = useCallback(() => {
