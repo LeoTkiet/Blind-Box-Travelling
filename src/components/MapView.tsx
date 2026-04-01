@@ -117,7 +117,65 @@ export default function MapView({ userLocation, radius, result }: Props) {
 
     if (map.isStyleLoaded()) applyResult(); else map.once("load", applyResult);
   }, [result]);
+// 3. Vẽ đường đi (Module 7)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !userLocation?.lng || !result?.lng) return;
 
+    const drawRoute = async () => {
+      try {
+        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+        const query = await fetch(
+          `https://api.mapbox.com/directions/v5/mapbox/driving/${userLocation.lng},${userLocation.lat};${result.lng},${result.lat}?geometries=geojson&overview=full&access_token=${token}`
+        );
+        const data = await query.json();
+        if (!data.routes?.length) return;
+
+        const routeData = data.routes[0].geometry;
+        const distanceKm = (data.routes[0].distance / 1000).toFixed(1);
+        const durationMin = Math.round(data.routes[0].duration / 60);
+
+        // Update hoặc tạo mới Source đường đi
+        if (map.getSource("route-source")) {
+          (map.getSource("route-source") as any).setData(routeData);
+        } else {
+          map.addSource("route-source", { type: "geojson", data: routeData });
+          map.addLayer({
+            id: "route-layer", type: "line", source: "route-source",
+            layout: { "line-join": "round", "line-cap": "round" },
+            paint: { "line-color": "#3b82f6", "line-width": 6, "line-opacity": 0.8 }
+          });
+        }
+
+        // Cập nhật Popup thông tin
+        const midCoords = routeData.coordinates[Math.floor(routeData.coordinates.length / 2)];
+        const oldPopups = document.getElementsByClassName('route-info-popup');
+        while(oldPopups[0]) oldPopups[0].remove();
+
+        const mapboxgl = (await import("mapbox-gl")).default;
+        new mapboxgl.Popup({ closeButton: false, className: 'route-info-popup', offset: [0, -10] })
+          .setLngLat(midCoords as [number, number])
+          .setHTML(`
+            <div style="background: white; color: black; padding: 6px 12px; border-radius: 24px; font-weight: bold; display: flex; align-items: center; gap: 8px; border: 2px solid #111827; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+              <span style="font-size: 18px;">🛵</span>
+              <span>${distanceKm} km (${durationMin} phút)</span>
+            </div>
+          `).addTo(map);
+
+
+        const bounds = routeData.coordinates.reduce((b: any, c: any) => [
+          [Math.min(b[0][0], c[0]), Math.min(b[0][1], c[1])],
+          [Math.max(b[1][0], c[0]), Math.max(b[1][1], c[1])]
+        ], [[routeData.coordinates[0][0], routeData.coordinates[0][1]], [routeData.coordinates[0][0], routeData.coordinates[0][1]]]);
+        
+        map.fitBounds(bounds, { padding: 80, duration: 1500 });
+      } catch (e) { console.error("Lỗi vẽ đường:", e); }
+    };
+
+    if (map.isStyleLoaded()) drawRoute(); else map.once("idle", drawRoute);
+  }, [userLocation, result]); 
+  // kết thúc 
+  
   return (
     <div style={{ flex: 1, position: "relative" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
