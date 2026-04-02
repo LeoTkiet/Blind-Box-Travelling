@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { UserLocation, LocationResult } from "./AppContent";
 
 const CATEGORIES = [
@@ -44,6 +44,17 @@ export default function BlindBoxPanel({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Đồng bộ hóa tính năng lấy vị trí của GPS và ChatBox
+  useEffect(() => {
+    if (userLocation && gpsStatus === "idle") {
+      setGpsStatus("done");
+      setMode("gps");
+    }
+    if (!userLocation) {
+      setGpsStatus("idle");
+    }
+  }, [userLocation]);
 
   const handleGPS = useCallback(() => {
     setGpsStatus("loading");

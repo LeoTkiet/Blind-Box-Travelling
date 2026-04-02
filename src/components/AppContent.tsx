@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import BlindBoxPanel from "./BlindBoxPanel";
 import MapView from "./MapView";
+import ChatBox from "./ChatBox";
 
 export interface UserLocation {
   lat: number;
@@ -17,7 +18,7 @@ export interface LocationResult {
   rating: number;
   reviews_count: number;
   category: string;
-  address?: string; // Fallback to name if missing
+  address?: string;
   photo_url?: string;
 }
 
@@ -51,7 +52,7 @@ export default function AppContent() {
   }, [userLocation, radius, category]);
 
   return (
-    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+    <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
       <BlindBoxPanel
         userLocation={userLocation} setUserLocation={setUserLocation}
         radius={radius} setRadius={setRadius}
@@ -60,6 +61,13 @@ export default function AppContent() {
         result={result} isGenerating={isGenerating} error={error}
       />
       <MapView userLocation={userLocation} radius={radius} result={result} />
+      {/* onLocationUpdate syncs ChatBox's geolocation button back to AppContent state,
+          so BlindBoxPanel and MapView automatically reflect the new position too. */}
+      <ChatBox
+        userLocation={userLocation}
+        result={result}
+        onLocationUpdate={setUserLocation}
+      />
     </div>
   );
 }
