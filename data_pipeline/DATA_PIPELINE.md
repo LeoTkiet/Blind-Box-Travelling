@@ -10,7 +10,7 @@ Quy trình bao gồm 2 bước chính:
 
 ## Bước 1: Cào dữ liệu (Crawl Data)
 
-Script `crawl_data.py` chịu trách nhiệm thu thập dữ liệu và lưu vào file `hcm_data.json`.
+Script `crawl_data.py` chịu trách nhiệm thu thập dữ liệu và lưu vào file `data.json`.
 
 ### 1. Cài đặt thư viện yêu cầu
 Bạn cần cài đặt Python và các thư viện cần thiết:
@@ -34,18 +34,18 @@ Script yêu cầu API key của khóa Gemini để hoạt động.
   ```
 
 ### 3. Chạy lệnh cào dữ liệu
-Trong file crawl_data.py nhấn `Ctrl + F` rồi tìm "hcm_data.json", thay đổi tất cả thành tên file bạn muốn lưu, sau đó ở hàm main, đổi province thành nơi bạn muốn cào data.
+Trong file crawl_data.py nhấn `Ctrl + F` rồi tìm "data.json", thay đổi tất cả thành tên file bạn muốn lưu, sau đó ở hàm main, đổi province thành nơi bạn muốn cào data.
 Chạy script bằng lệnh:
 ```bash
 python crawl_data.py
 ```
-> **Lưu ý:** Quá trình cào dữ liệu sẽ mở trình duyệt Chrome, vui lòng không đóng trình duyệt trong quá trình này. Bạn có thể bấm `Ctrl + C` để dừng script bất cứ lúc nào, dữ liệu đã cào sẽ được lưu lại an toàn. Dữ liệu đầu ra nằm ở file `hcm_data.json`.
+> **Lưu ý:** Quá trình cào dữ liệu sẽ mở trình duyệt Chrome, vui lòng không đóng trình duyệt trong quá trình này. Bạn có thể bấm `Ctrl + C` để dừng script bất cứ lúc nào, dữ liệu đã cào sẽ được lưu lại an toàn. Dữ liệu đầu ra nằm ở file `data.json`.
 
 ---
 
 ## Bước 2: Upload dữ liệu lên Supabase
 
-Script `upload.js` sẽ đọc dữ liệu từ `hcm_data.json` và tải lên bảng `locations` trên Supabase. Script có hỗ trợ upsert để tránh trùng lặp dữ liệu.
+Script `upload.js` sẽ đọc dữ liệu từ `data.json` và tải lên bảng `locations` trên Supabase. Script có hỗ trợ upsert để tránh trùng lặp dữ liệu.
 
 ### 1. Cài đặt thư viện yêu cầu
 Máy tính của bạn cần cài đặt Node.js. Cài đặt thư viện của Supabase bằng lệnh:
