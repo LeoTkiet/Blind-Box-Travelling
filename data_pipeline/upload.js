@@ -16,14 +16,14 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 async function seedData() {
     try {
-        console.log('Reading hcm_data.json file...');
-        const rawData = fs.readFileSync('hcm_data.json', 'utf8');
+        console.log('Reading data.json file...');
+        const rawData = fs.readFileSync('data.json', 'utf8');
         const locations = JSON.parse(rawData); // read data from json file
-        
+
         console.log(`Found ${locations.length} locations in local file.`);
 
         console.log('Checking existing data on Supabase...');
-        
+
         // get existing data from supabase
         const { data: existingData, error: fetchError } = await supabase
             .from('locations')

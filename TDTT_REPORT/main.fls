@@ -1,6 +1,6 @@
-PWD c:\Users\admin\blind-box-travelling\TDTT_REPORT
+PWD c:\TDTT-BlindBoxTravelling\Blind-Box-Travelling\TDTT_REPORT
 INPUT C:\Users\admin\AppData\Local\MiKTeX\miktex\data\le\pdftex\pdflatex.fmt
-INPUT c:\Users\admin\blind-box-travelling\TDTT_REPORT\main.tex
+INPUT c:\TDTT-BlindBoxTravelling\Blind-Box-Travelling\TDTT_REPORT\main.tex
 OUTPUT main.log
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\base\article.cls
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\base\article.cls
