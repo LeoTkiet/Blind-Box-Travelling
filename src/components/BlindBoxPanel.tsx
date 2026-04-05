@@ -2,18 +2,17 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { UserLocation, LocationResult } from "./AppContent";
+import { Inter } from "next/font/google"; 
+const inter = Inter({ subsets: ["latin", "vietnamese"], display: "swap" });
 
+// Update categories to match the collection in the design image
 const CATEGORIES = [
-  { value: "all", label: "Tất cả" },
-  { value: "restaurant", label: "Nhà hàng" },
-  { value: "cafe", label: "Quán cà phê" },
-  { value: "market", label: "Chợ" },
-  { value: "hotel", label: "Khách sạn" },
-  { value: "motel", label: "Nhà nghỉ" },
-  { value: "museum", label: "Bảo tàng" },
-  { value: "ruins", label: "Di tích" },
-  { value: "memorial", label: "Đài tưởng niệm" },
-  { value: "attraction", label: "Điểm tham quan" },
+  { value: "all", label: "Tất cả", icon: "🎲" },
+  { value: "restaurant", label: "Nhà hàng", icon: "🍽️" },
+  { value: "cafe", label: "Cà phê", icon: "☕" },
+  { value: "attraction", label: "Tham quan", icon: "📸" },
+  { value: "museum", label: "Bảo tàng", icon: "🏛️" },
+  { value: "ruins", label: "Di tích", icon: "🏺" },
 ];
 
 interface Suggestion { id: string; place_name: string; center: [number, number]; }
@@ -30,9 +29,18 @@ interface Props {
 }
 
 const sectionLabel: React.CSSProperties = {
-  margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600,
-  color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em",
+  margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 700,
+  color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em",
 };
+
+// Helper function to calculate distance for the "Clue"
+function haversineDist(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export default function BlindBoxPanel({
   userLocation, setUserLocation,
@@ -45,7 +53,14 @@ export default function BlindBoxPanel({
   const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Đồng bộ hóa tính năng lấy vị trí của GPS và ChatBox
+  // State to manage name visibility (Unlock)
+  const [isRevealed, setIsRevealed] = useState(false);
+
+  // Close the box when a new result arrives
+  useEffect(() => {
+    if (result) setIsRevealed(false);
+  }, [result]);
+
   useEffect(() => {
     if (userLocation && gpsStatus === "idle") {
       setGpsStatus("done");
@@ -85,24 +100,24 @@ export default function BlindBoxPanel({
   };
 
   return (
-    <aside style={{
-      width: "340px", flexShrink: 0, borderRight: "1px solid #e5e7eb",
+    <aside className={inter.className} style={{
+      width: "360px", flexShrink: 0, borderRight: "1px solid #e5e7eb",
       background: "#fff", display: "flex", flexDirection: "column", overflow: "hidden",
     }}>
       <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem" }}>
-        <h2 style={{ margin: "0 0 1.25rem", fontSize: "1rem", fontWeight: 700, color: "#111827", letterSpacing: "-0.02em" }}>
-          🎲 Du lịch hộp mù
+        <h2 style={{ margin: "0 0 1.25rem", fontSize: "1.2rem", fontWeight: 800, color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span>🎲</span> Du lịch hộp mù
         </h2>
 
-        {/* ── VỊ TRÍ ── */}
+        {/* ── LOCATION ── */}
         <section style={{ marginBottom: "1.25rem" }}>
           <p style={sectionLabel}>Vị trí của bạn</p>
           <div style={{ display: "flex", border: "1px solid #e5e7eb", borderRadius: "8px", overflow: "hidden", marginBottom: "0.75rem" }}>
             {(["gps", "address"] as const).map((m) => (
               <button key={m} onClick={() => { setMode(m); setUserLocation(null); setGpsStatus("idle"); setSuggestions([]); setAddressInput(""); }}
                 style={{
-                  flex: 1, padding: "0.5rem", border: "none", cursor: "pointer",
-                  fontSize: "0.8125rem", fontWeight: 500,
+                  flex: 1, padding: "0.625rem", border: "none", cursor: "pointer",
+                  fontSize: "0.875rem", fontWeight: 600,
                   background: mode === m ? "#111827" : "#fff",
                   color: mode === m ? "#fff" : "#6b7280", transition: "all 0.15s",
                 }}>
@@ -166,35 +181,53 @@ export default function BlindBoxPanel({
           )}
         </section>
 
-        {/* ── CATEGORY ── */}
+        {/* ── COLLECTION ── */}
         <section style={{ marginBottom: "1.25rem" }}>
-          <p style={sectionLabel}>Loại địa điểm</p>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}
-            style={{
-              width: "100%", padding: "0.625rem 0.75rem", borderRadius: "8px",
-              border: "1px solid #e5e7eb", fontSize: "0.875rem", color: "#111827",
-              background: "#fff", cursor: "pointer", outline: "none",
-            }}>
-            {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
+          <p style={sectionLabel}>Chọn Bộ Sưu Tập</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            {CATEGORIES.map((item) => (
+              <button 
+                key={item.value} 
+                onClick={() => setCategory(item.value)}
+                style={{
+                  padding: "12px", 
+                  borderRadius: "12px",
+                  border: category === item.value ? "2px solid #111827" : "1px solid #e5e7eb",
+                  background: category === item.value ? "#f8fafc" : "#fff",
+                  cursor: "pointer", 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "8px",
+                  transition: "all 0.2s ease"
+                }}>
+                <span style={{ fontSize: "1.3rem" }}>{item.icon}</span>
+                <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "#374151" }}>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </section>
 
         {/* ── DISTANCE ── */}
         <section style={{ marginBottom: "1.5rem" }}>
           <p style={{ ...sectionLabel, display: "flex", justifyContent: "space-between" }}>
             <span>Khoảng cách</span>
-            <span style={{ fontWeight: 700, color: "#111827" }}>{radius} km</span>
+            <span style={{ fontWeight: 800, color: "#111827" }}>{radius} KM</span>
           </p>
           <input type="range" min={1} max={25} step={1} value={radius}
             onChange={(e) => setRadius(Number(e.target.value))}
-            style={{ width: "100%", accentColor: "#111827", cursor: "pointer" }}
+            style={{ width: "100%", accentColor: "#111827", cursor: "pointer", height: "6px" }}
           />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-            <span>1 km</span><span>25 km</span>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem", fontWeight: 500 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{color: "#eab308"}}></span> 1km
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{color: "#ef4444"}}></span> 25km
+            </span>
           </div>
         </section>
 
-        {/* ── GENERATE ── */}
+        {/* ── GENERATE BUTTON ── */}
         {error && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: "8px", padding: "0.625rem 0.875rem", fontSize: "0.8125rem", marginBottom: "0.75rem" }}>
             {error}
@@ -202,33 +235,75 @@ export default function BlindBoxPanel({
         )}
         <button onClick={onGenerate} disabled={isGenerating || !userLocation}
           style={{
-            width: "100%", padding: "0.75rem", borderRadius: "10px",
-            border: "none", background: isGenerating || !userLocation ? "#e5e7eb" : "#111827",
-            color: isGenerating || !userLocation ? "#9ca3af" : "#fff",
-            fontSize: "0.9375rem", fontWeight: 600, cursor: !userLocation || isGenerating ? "not-allowed" : "pointer",
-            transition: "all 0.15s", letterSpacing: "-0.01em",
-          }}>
-          {isGenerating ? "Đang tìm kiếm..." : "🎲 Tạo hộp mù"}
+            width: "100%", padding: "0.875rem", borderRadius: "12px",
+            border: "none", 
+            background: isGenerating || !userLocation ? "#e2e8f0" : "linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%)",
+            color: isGenerating || !userLocation ? "#94a3b8" : "#fff",
+            fontSize: "1rem", fontWeight: 700, cursor: !userLocation || isGenerating ? "not-allowed" : "pointer",
+            transition: "all 0.2s ease",
+            boxShadow: isGenerating || !userLocation ? "none" : "0 4px 12px rgba(168, 85, 247, 0.4)"
+          }}
+          onMouseDown={(e) => { if(!isGenerating && userLocation) e.currentTarget.style.transform = "scale(0.97)" }}
+          onMouseUp={(e) => e.currentTarget.style.transform = "scale(1)"}
+        >
+          {isGenerating ? "⏳ Đang lắc hộp..." : "🎲 Tạo hộp mù"}
         </button>
 
-        {/* ── RESULT ── */}
+        {/* ── RESULT READY (Blind Box) ── */}
         {result && (
-          <div style={{ marginTop: "1.25rem", border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden" }}>
-            {result.photo_url && (
-              <img src={result.photo_url} alt={result.name}
-                style={{ width: "100%", height: "140px", objectFit: "cover", display: "block" }} />
-            )}
-            <div style={{ padding: "0.875rem" }}>
-              <p style={{ margin: "0 0 0.25rem", fontSize: "0.9375rem", fontWeight: 700, color: "#111827" }}>{result.name}</p>
-              <p style={{ margin: "0 0 0.375rem", fontSize: "0.8125rem", color: "#6b7280" }}>{result.address || "Hồ Chí Minh, Việt Nam"}</p>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8125rem" }}>
-                <span>⭐ {result.rating?.toFixed(1)}</span>
-                <span style={{ color: "#9ca3af" }}>·</span>
-                <span style={{ color: "#6b7280" }}>{result.reviews_count} đánh giá</span>
-                <span style={{ color: "#9ca3af" }}>·</span>
-                <span style={{ color: "#6b7280", textTransform: "capitalize" }}>{result.category}</span>
+          <div style={{ marginTop: "1.5rem" }}>
+            {!isRevealed ? (
+              // Hidden name state (Clue)
+              <div style={{ 
+                padding: "1.25rem", textAlign: "center", background: "#f8fafc", 
+                border: "1px dashed #cbd5e1", borderRadius: "12px" 
+              }}>
+                <h3 style={{ margin: "0 0 12px", fontSize: "1.1rem", color: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                  <span>🤫</span> Hộp mù đã sẵn sàng!
+                </h3>
+                <p style={{ fontSize: "0.875rem", color: "#475569", marginBottom: "1.25rem", lineHeight: "1.6" }}>
+                  Gợi ý: Địa điểm này cách bạn khoảng <br/>
+                  <strong style={{fontSize: "1rem", color: "#334155"}}>{userLocation ? haversineDist(userLocation.lat, userLocation.lng, result.lat, result.lng).toFixed(1) : "?"} km</strong>. <br/>
+                  Nơi đây đã có <strong style={{color: "#334155"}}>{result.reviews_count}</strong> người đến khám phá và được đánh giá <strong style={{color: "#334155"}}>{result.rating}⭐</strong>.
+                </p>
+                <button onClick={() => setIsRevealed(true)}
+                  style={{ 
+                    width: "100%", padding: "0.75rem", borderRadius: "8px", background: "#0f172a", 
+                    color: "#fff", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 700,
+                    transition: "background 0.2s"
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "#1e293b"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "#0f172a"}
+                  >
+                  🔓 Mở khóa xem tên (Mất vui đấy nhé!)
+                </button>
               </div>
-            </div>
+            ) : (
+              // Unlocked state
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.5s ease" }}>
+                {result.photo_url ? (
+                  <img src={result.photo_url} alt={result.name}
+                    style={{ width: "100%", height: "140px", objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ width: "100%", height: "120px", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem" }}>
+                    🎁
+                  </div>
+                )}
+                <div style={{ padding: "1rem" }}>
+                  <p style={{ margin: "0 0 0.35rem", fontSize: "1rem", fontWeight: 800, color: "#0f172a" }}>{result.name}</p>
+                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.8125rem", color: "#64748b", lineHeight: "1.4" }}>{result.address || "Chưa rõ địa chỉ cụ thể"}</p>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8125rem", flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 600, color: "#eab308" }}>⭐ {result.rating?.toFixed(1)}</span>
+                    <span style={{ color: "#cbd5e1" }}>|</span>
+                    <span style={{ color: "#64748b" }}>{result.reviews_count} đánh giá</span>
+                    <span style={{ color: "#cbd5e1" }}>|</span>
+                    <span style={{ color: "#8b5cf6", fontWeight: 600, background: "#f3e8ff", padding: "2px 8px", borderRadius: "6px" }}>
+                      {CATEGORIES.find(c => c.value === result.category)?.label || result.category}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
