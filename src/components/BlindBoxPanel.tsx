@@ -220,10 +220,10 @@ export default function BlindBoxPanel({
           />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem", fontWeight: 500 }}>
             <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#eab308"}}>🚶</span> Đi bộ (1km)
+              <span style={{color: "#eab308"}}></span> 1km
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#ef4444"}}>🛵</span> Đi xe (25km)
+              <span style={{color: "#ef4444"}}></span> 25km
             </span>
           </div>
         </section>
