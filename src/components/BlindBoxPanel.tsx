@@ -2,10 +2,10 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { UserLocation, LocationResult } from "./AppContent";
-import { Inter } from "next/font/google"; 
+import { Inter } from "next/font/google";
+
 const inter = Inter({ subsets: ["latin", "vietnamese"], display: "swap" });
 
-// Update categories to match the collection in the design image
 const CATEGORIES = [
   { value: "all", label: "Tất cả", icon: "🎲" },
   { value: "restaurant", label: "Nhà hàng", icon: "🍽️" },
@@ -193,7 +193,8 @@ export default function BlindBoxPanel({
                   padding: "12px", 
                   borderRadius: "12px",
                   border: category === item.value ? "2px solid #111827" : "1px solid #e5e7eb",
-                  background: category === item.value ? "#f8fafc" : "#fff",
+                  // Đổi màu ô đã chọn thành xám nhạt thay vì tím nhạt
+                  background: category === item.value ? "#f3f4f6" : "#fff",
                   cursor: "pointer", 
                   display: "flex", 
                   alignItems: "center", 
@@ -219,10 +220,10 @@ export default function BlindBoxPanel({
           />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem", fontWeight: 500 }}>
             <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#eab308"}}></span> 1km
+              <span style={{color: "#eab308"}}>🚶</span> Đi bộ (1km)
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#ef4444"}}></span> 25km
+              <span style={{color: "#ef4444"}}>🛵</span> Đi xe (25km)
             </span>
           </div>
         </section>
@@ -237,11 +238,13 @@ export default function BlindBoxPanel({
           style={{
             width: "100%", padding: "0.875rem", borderRadius: "12px",
             border: "none", 
-            background: isGenerating || !userLocation ? "#e2e8f0" : "linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%)",
+            // Đổi màu gradient tím thành màu đen tuyền nguyên khối
+            background: isGenerating || !userLocation ? "#e2e8f0" : "#111827",
             color: isGenerating || !userLocation ? "#94a3b8" : "#fff",
             fontSize: "1rem", fontWeight: 700, cursor: !userLocation || isGenerating ? "not-allowed" : "pointer",
             transition: "all 0.2s ease",
-            boxShadow: isGenerating || !userLocation ? "none" : "0 4px 12px rgba(168, 85, 247, 0.4)"
+            // Đổi bóng đổ (shadow) thành màu xám/đen
+            boxShadow: isGenerating || !userLocation ? "none" : "0 4px 12px rgba(17, 24, 39, 0.25)"
           }}
           onMouseDown={(e) => { if(!isGenerating && userLocation) e.currentTarget.style.transform = "scale(0.97)" }}
           onMouseUp={(e) => e.currentTarget.style.transform = "scale(1)"}
@@ -268,14 +271,16 @@ export default function BlindBoxPanel({
                 </p>
                 <button onClick={() => setIsRevealed(true)}
                   style={{ 
-                    width: "100%", padding: "0.75rem", borderRadius: "8px", background: "#0f172a", 
+                    width: "100%", padding: "0.75rem", borderRadius: "8px", 
+                    // Nút mở khóa đổi thành xám đậm, rê chuột vào sẽ ra đen
+                    background: "#374151", 
                     color: "#fff", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 700,
                     transition: "background 0.2s"
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "#1e293b"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "#0f172a"}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "#111827"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "#374151"}
                   >
-                  🔓 Mở khóa xem tên (Mất vui đấy nhé!)
+                  🔓 Mở khóa xem tên (Mất vui nhé!)
                 </button>
               </div>
             ) : (
@@ -291,13 +296,20 @@ export default function BlindBoxPanel({
                 )}
                 <div style={{ padding: "1rem" }}>
                   <p style={{ margin: "0 0 0.35rem", fontSize: "1rem", fontWeight: 800, color: "#0f172a" }}>{result.name}</p>
-                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.8125rem", color: "#64748b", lineHeight: "1.4" }}>{result.address || "Chưa rõ địa chỉ cụ thể"}</p>
+                  
+                  {/* Đã xóa phần || "Chưa rõ địa chỉ cụ thể", chỉ render khi result.address có tồn tại */}
+                  {result.address && (
+                    <p style={{ margin: "0 0 0.5rem", fontSize: "0.8125rem", color: "#64748b", lineHeight: "1.4" }}>{result.address}</p>
+                  )}
+                  
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8125rem", flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 600, color: "#eab308" }}>⭐ {result.rating?.toFixed(1)}</span>
                     <span style={{ color: "#cbd5e1" }}>|</span>
                     <span style={{ color: "#64748b" }}>{result.reviews_count} đánh giá</span>
                     <span style={{ color: "#cbd5e1" }}>|</span>
-                    <span style={{ color: "#8b5cf6", fontWeight: 600, background: "#f3e8ff", padding: "2px 8px", borderRadius: "6px" }}>
+                    
+                    {/* Đổi màu nền của category tag thành màu xám, chữ đen thay vì màu tím */}
+                    <span style={{ color: "#111827", fontWeight: 600, background: "#e5e7eb", padding: "2px 8px", borderRadius: "6px" }}>
                       {CATEGORIES.find(c => c.value === result.category)?.label || result.category}
                     </span>
                   </div>
