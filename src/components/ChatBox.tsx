@@ -12,6 +12,7 @@ import {
     Bot,
 } from "lucide-react";
 import type { UserLocation, LocationResult } from "./AppContent";
+import type { AIGeneratedContent } from "@/types";
 
 interface Message {
     id: string;
@@ -31,6 +32,7 @@ interface LocationInfo {
 interface Props {
     userLocation: UserLocation | null;
     result: LocationResult | null;
+    aiPayload?: AIGeneratedContent | null;
     /** Gọi khi ChatBox lấy được GPS thành công — đồng bộ ngược lên AppContent */
     onLocationUpdate: (loc: UserLocation) => void;
 }
@@ -155,7 +157,7 @@ function LocationRequestCard({ onRequest, isLoading }: { onRequest: () => void; 
     );
 }
 
-export default function ChatBox({ userLocation, result, onLocationUpdate }: Props) {
+export default function ChatBox({ userLocation, result, aiPayload, onLocationUpdate }: Props) {
     const [messages, setMessages] = useState<Message[]>([
         {
             id: "welcome",
@@ -178,15 +180,6 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
-
-    // Tự động lấy chi tiết địa điểm khi userLocation thay đổi từ bên ngoài 
-    useEffect(() => {
-        if (!userLocation) return;
-        const key = `${userLocation.lat},${userLocation.lng}`;
-        if (key === prevLocationRef.current) return;
-        prevLocationRef.current = key;
-        fetchLocationDetails(userLocation.lat, userLocation.lng);
-    }, [userLocation]);
 
     const fetchLocationDetails = useCallback(async (lat: number, lng: number) => {
         setIsFetchingLocation(true);
@@ -220,6 +213,30 @@ export default function ChatBox({ userLocation, result, onLocationUpdate }: Prop
             setIsFetchingLocation(false);
         }
     }, []);
+
+    // Tự động lấy chi tiết địa điểm khi userLocation thay đổi từ bên ngoài 
+    useEffect(() => {
+        if (!userLocation) return;
+        const key = `${userLocation.lat},${userLocation.lng}`;
+        if (key === prevLocationRef.current) return;
+        prevLocationRef.current = key;
+        fetchLocationDetails(userLocation.lat, userLocation.lng);
+    }, [userLocation, fetchLocationDetails]);
+
+    // Bắt sự kiện khi có Hộp Mù mới được tạo ra
+    useEffect(() => {
+        if (aiPayload && result) {
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: `blind-box-${Date.now()}`,
+                    type: "bot",
+                    text: `**Hộp mù đã sẵn sàng!** 🎁\n\nĐây là câu đố dành cho bạn:\n> *${aiPayload.riddle}*\n\n**💰 Chi phí dự kiến:** ${aiPayload.estimated_cost}\n\n**🎒 Gợi ý mang theo:**\n${aiPayload.items_to_bring.map(i => `- ${i}`).join('\n')}\n\nBạn có muốn tôi cung cấp thêm lộ trình đi đến đây không? 😉`,
+                    timestamp: new Date(),
+                },
+            ]);
+        }
+    }, [aiPayload, result]);
 
     /**
      * Xử lý khi bấm nút "Bật định vị" trực tiếp trong chat.
