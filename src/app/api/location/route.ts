@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
         const nearby = (allLocations || [])
             .map((loc) => ({
                 ...loc,
-                distance: calculateDistance(latNum, lngNum, loc.latitude, loc.longitude),
+                distance: calculateDistance(latNum, lngNum, loc.lat, loc.lng),
             }))
             .filter((loc) => loc.distance <= radiusNum)
             .sort((a, b) => a.distance - b.distance)

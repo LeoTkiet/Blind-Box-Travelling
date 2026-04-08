@@ -4,6 +4,8 @@ import { useState, useCallback } from "react";
 import BlindBoxPanel from "./BlindBoxPanel";
 import MapView from "./MapView";
 import ChatBox from "./ChatBox";
+import { getBlindBoxAI } from "@/lib/groq";
+import type { AIGeneratedContent } from "@/types";
 
 export interface UserLocation {
   lat: number;
@@ -27,6 +29,7 @@ export default function AppContent() {
   const [radius, setRadius] = useState(5);
   const [category, setCategory] = useState("all");
   const [result, setResult] = useState<LocationResult | null>(null);
+  const [aiPayload, setAiPayload] = useState<AIGeneratedContent | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +38,7 @@ export default function AppContent() {
     setIsGenerating(true);
     setError(null);
     setResult(null);
+    setAiPayload(null);
     try {
       const res = await fetch("/api/blind-box", {
         method: "POST",
@@ -44,6 +48,10 @@ export default function AppContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Không tìm thấy địa điểm.");
       setResult(data.location);
+
+      // Sau khi có địa điểm, gọi AI Server Action
+      const aiRes = await getBlindBoxAI(data.location);
+      setAiPayload(aiRes);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Có lỗi xảy ra.");
     } finally {
@@ -66,6 +74,7 @@ export default function AppContent() {
       <ChatBox
         userLocation={userLocation}
         result={result}
+        aiPayload={aiPayload}
         onLocationUpdate={setUserLocation}
       />
     </div>

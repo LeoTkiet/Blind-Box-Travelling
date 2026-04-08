@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type mapboxgl from "mapbox-gl";
 import type { UserLocation, LocationResult } from "./AppContent";
+
+// Phải import CSS trực tiếp trên đầu file thay vì import động (await import)
+// Nếu không, Mapbox trên Next.js App Router sẽ bị vỡ hiển thị hoàn toàn do lọt lưới CSS
+import "mapbox-gl/dist/mapbox-gl.css";
 
 interface Props {
   userLocation: UserLocation | null;
@@ -10,7 +14,6 @@ interface Props {
   result: LocationResult | null;
 }
 
-// HCM City default center
 const DEFAULT_CENTER: [number, number] = [106.6297, 10.8231];
 
 export default function MapView({ userLocation, radius, result }: Props) {
@@ -19,24 +22,31 @@ export default function MapView({ userLocation, radius, result }: Props) {
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const resultMarkerRef = useRef<mapboxgl.Marker | null>(null);
 
-  // Initialize map
+  // State quản lý xem map đã nạp xong style chưa để tránh lỗi Race Condition
+  const [mapReady, setMapReady] = useState(false);
+
+  // 1. Khởi tạo mảng bản đồ MapBox
   useEffect(() => {
     if (typeof window === "undefined" || !containerRef.current || mapRef.current) return;
 
     const init = async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
-      await import("mapbox-gl/dist/mapbox-gl.css" as never);
 
       mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
-      mapRef.current = new mapboxgl.Map({
+      const map = new mapboxgl.Map({
         container: containerRef.current!,
         style: "mapbox://styles/mapbox/streets-v12",
         center: DEFAULT_CENTER,
         zoom: 12,
       });
 
-      mapRef.current.addControl(new mapboxgl.NavigationControl(), "top-right");
+      map.addControl(new mapboxgl.NavigationControl(), "top-right");
+      mapRef.current = map;
+
+      map.on("load", () => {
+        setMapReady(true);
+      });
     };
 
     init();
@@ -47,15 +57,15 @@ export default function MapView({ userLocation, radius, result }: Props) {
     };
   }, []);
 
-  // Update user location marker + radius circle
+  // 2. Vẽ marker vị trí User và hình tròn bán kính
   useEffect(() => {
-    if (!mapRef.current || !userLocation) return;
     const map = mapRef.current;
+    if (!mapReady || !map || !userLocation) return;
 
     const applyMarker = async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
 
-      // User marker
+      // Xoá marker hiện tại nếu có
       userMarkerRef.current?.remove();
       const el = document.createElement("div");
       el.style.cssText = "width:14px;height:14px;border-radius:50%;background:#111827;border:3px solid #fff;box-shadow:0 0 0 2px #111827;";
@@ -63,10 +73,10 @@ export default function MapView({ userLocation, radius, result }: Props) {
         .setLngLat([userLocation.lng, userLocation.lat])
         .addTo(map);
 
-      // Fly to user
+      // Bay tới User
       map.flyTo({ center: [userLocation.lng, userLocation.lat], zoom: 13, duration: 1000 });
 
-      // Radius circle (GeoJSON)
+      // Vẽ hình tròn bán kính
       const circleGeoJson = createCircle(userLocation.lng, userLocation.lat, radius);
       if (map.getSource("radius-source")) {
         (map.getSource("radius-source") as mapboxgl.GeoJSONSource).setData(circleGeoJson);
@@ -77,19 +87,13 @@ export default function MapView({ userLocation, radius, result }: Props) {
       }
     };
 
-    if (map.isStyleLoaded()) {
-      applyMarker();
-    } else {
-      map.once("load", applyMarker);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userLocation, radius]);
+    applyMarker();
+  }, [mapReady, userLocation, radius]);
 
-
-  // Update result marker
+  // 3. Vẽ marker Kết quả (Blind Box)
   useEffect(() => {
-    if (!mapRef.current || !result) return;
     const map = mapRef.current;
+    if (!mapReady || !map || !result) return;
 
     const applyResult = async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
@@ -115,12 +119,13 @@ export default function MapView({ userLocation, radius, result }: Props) {
       map.flyTo({ center: [result.lng, result.lat], zoom: 15, duration: 1200 });
     };
 
-    if (map.isStyleLoaded()) applyResult(); else map.once("load", applyResult);
-  }, [result]);
-// 3. Vẽ đường đi (Module 7)
+    applyResult();
+  }, [mapReady, result]);
+
+  // 4. Vẽ đường đi tự động (Module 7)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !userLocation?.lng || !result?.lng) return;
+    if (!mapReady || !map || !userLocation?.lng || !result?.lng) return;
 
     const drawRoute = async () => {
       try {
@@ -135,9 +140,8 @@ export default function MapView({ userLocation, radius, result }: Props) {
         const distanceKm = (data.routes[0].distance / 1000).toFixed(1);
         const durationMin = Math.round(data.routes[0].duration / 60);
 
-        // Update hoặc tạo mới Source đường đi
         if (map.getSource("route-source")) {
-          (map.getSource("route-source") as any).setData(routeData);
+          (map.getSource("route-source") as mapboxgl.GeoJSONSource).setData(routeData);
         } else {
           map.addSource("route-source", { type: "geojson", data: routeData });
           map.addLayer({
@@ -147,10 +151,9 @@ export default function MapView({ userLocation, radius, result }: Props) {
           });
         }
 
-        // Cập nhật Popup thông tin
         const midCoords = routeData.coordinates[Math.floor(routeData.coordinates.length / 2)];
         const oldPopups = document.getElementsByClassName('route-info-popup');
-        while(oldPopups[0]) oldPopups[0].remove();
+        while (oldPopups[0]) oldPopups[0].remove();
 
         const mapboxgl = (await import("mapbox-gl")).default;
         new mapboxgl.Popup({ closeButton: false, className: 'route-info-popup', offset: [0, -10] })
@@ -162,20 +165,18 @@ export default function MapView({ userLocation, radius, result }: Props) {
             </div>
           `).addTo(map);
 
-
         const bounds = routeData.coordinates.reduce((b: any, c: any) => [
           [Math.min(b[0][0], c[0]), Math.min(b[0][1], c[1])],
           [Math.max(b[1][0], c[0]), Math.max(b[1][1], c[1])]
         ], [[routeData.coordinates[0][0], routeData.coordinates[0][1]], [routeData.coordinates[0][0], routeData.coordinates[0][1]]]);
-        
+
         map.fitBounds(bounds, { padding: 80, duration: 1500 });
       } catch (e) { console.error("Lỗi vẽ đường:", e); }
     };
 
-    if (map.isStyleLoaded()) drawRoute(); else map.once("idle", drawRoute);
-  }, [userLocation, result]); 
-  // kết thúc 
-  
+    drawRoute();
+  }, [mapReady, userLocation, result]);
+
   return (
     <div style={{ flex: 1, position: "relative" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
