@@ -188,6 +188,19 @@ export default function MapView({ userLocation, radius, result }: Props) {
     drawRoute();
   }, [mapReady, userLocation, result]);
 
+  // vòng đời gps
+  useEffect(() => {
+  const map = mapRef.current;
+  if (!mapReady || !map || !userMarkerRef.current) return;
+
+  const watchId = startTracking(userMarkerRef.current, map);
+
+  return () => {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  };
+}, [mapReady]);
+ 
+
   return (
     <div style={{ flex: 1, position: "relative" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
@@ -207,4 +220,19 @@ function createCircle(lng: number, lat: number, radiusKm: number): GeoJSON.Featu
   }
   coords.push(coords[0]);
   return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [coords] } };
+}
+
+/** Track GPS and update user position in real-time*/
+function startTracking(marker: mapboxgl.Marker, map: mapboxgl.Map) { 
+  if (!navigator.geolocation) return null;
+  return navigator.geolocation.watchPosition(
+    (pos) => {
+      const newPos: [number, number] = [pos.coords.longitude, pos.coords.latitude];
+      marker.setLngLat(newPos);
+      // Dòng này giúp bản đồ tự chạy theo người dùng
+      map.easeTo({ center: newPos, duration: 1000 });
+    },
+    (err) => console.error(err),
+    { enableHighAccuracy: true }
+  );
 }
