@@ -131,7 +131,7 @@ export default function MapView({ userLocation, radius, result }: Props) {
       try {
         const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
         const query = await fetch(
-          `https://api.mapbox.com/directions/v5/mapbox/driving/${userLocation.lng},${userLocation.lat};${result.lng},${result.lat}?geometries=geojson&overview=full&access_token=${token}`
+          `https://api.mapbox.com/directions/v5/mapbox/driving/${userLocation.lng},${userLocation.lat};${result.lng},${result.lat}?geometries=geojson&overview=full&exclude=motorway&access_token=${token}`
         );
         const data = await query.json();
         if (!data.routes?.length) return;
@@ -159,6 +159,17 @@ export default function MapView({ userLocation, radius, result }: Props) {
         new mapboxgl.Popup({ closeButton: false, className: 'route-info-popup', offset: [0, -10] })
           .setLngLat(midCoords as [number, number])
           .setHTML(`
+            <style>
+              .route-info-popup .mapboxgl-popup-content {
+                background: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                border: none !important;
+              }
+              .route-info-popup .mapboxgl-popup-tip {
+                display: none !important;
+              }
+            </style>
             <div style="background: white; color: black; padding: 6px 12px; border-radius: 24px; font-weight: bold; display: flex; align-items: center; gap: 8px; border: 2px solid #111827; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
               <span style="font-size: 18px;">🛵</span>
               <span>${distanceKm} km (${durationMin} phút)</span>
