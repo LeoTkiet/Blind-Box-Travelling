@@ -3,7 +3,6 @@
 const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const fs = require("fs");
-const path = require("path");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
 
@@ -11,59 +10,24 @@ const Groq = require("groq-sdk");
 const CONFIG = {
   INPUT_FILE: "data/data.json",
   OUTPUT_FILE: "data/data_enriched.json",
-
-  // Giới hạn bình luận
-  MAX_REVIEWS: 50,
-
-  // Thời gian chờ (mili-giây)
+  MAX_REVIEWS: 30,
   SLEEP_BETWEEN_ACTIONS: 3000,
   SLEEP_AFTER_NAVIGATE: 5000,
   SLEEP_BETWEEN_PLACES: 4000,
-
-  // Giới hạn load DOM
-  EXPLICIT_WAIT_TIMEOUT: 15000,
-
-  // ✅ Danh mục hợp lệ đã được mở rộng
+  AI_CALL_TIMEOUT: 30000,
+  RATE_LIMIT_RETRY_DELAY: 60000,
+  RATE_LIMIT_MAX_RETRIES: 2,
+  MAX_REVIEW_LENGTH: 200,
+  ELEMENT_WAIT_TIMEOUT: 5000,
   VALID_CATEGORIES: [
-    // Ăn uống
-    "restaurant",         // Nhà hàng, quán ăn, food court, buffet, street food
-    "cafe",               // Quán cà phê, trà, tiệm bánh ngọt, juice bar
-    "bar/pub",            // Bar, pub, rooftop bar, bia craft
-    "bakery",             // Tiệm bánh, tiệm kem, dessert shop, pastry
-
-    // Lưu trú
-    "hotel",              // Khách sạn, resort, nhà nghỉ
-    "hostel",             // Hostel, guesthouse, nhà trọ khách du lịch
-    "homestay",           // Homestay, villa, bungalow
-
-    // Tham quan & Văn hoá
-    "attraction",         // Điểm tham quan, di tích, kiến trúc nổi tiếng, công trình lịch sử, quảng trường
-    "museum",             // Bảo tàng, nhà trưng bày, gallery nghệ thuật
-    "pagoda/temple",      // Chùa, đền, đình, miếu, nhà thờ, thánh đường
-    "park",               // Công viên, vườn hoa, khu sinh thái, vườn thực vật
-
-    // Mua sắm
-    "market",             // Chợ truyền thống, chợ đêm, chợ ẩm thực
-    "shopping_mall",      // Trung tâm thương mại, siêu thị lớn, khu mua sắm hiện đại
-    "souvenir_shop",      // Cửa hàng quà lưu niệm, đồ thủ công mỹ nghệ, đặc sản địa phương
-
-    // Giải trí & Vui chơi
-    "entertainment",      // Khu vui chơi, rạp chiếu phim, karaoke, club, sân khấu
-    "spa/wellness",       // Spa, massage, yoga, gym, trung tâm sức khoẻ
-    "sports",             // Sân thể thao, bowling, sân golf, bể bơi
-    "theme_park",         // Công viên chủ đề, công viên nước, khu giải trí tích hợp
-
-    // Thiên nhiên & Phiêu lưu
-    "beach",              // Bãi biển, khu biển, hồ tắm thiên nhiên
-    "viewpoint",          // Điểm ngắm cảnh, đỉnh núi, cầu kính, tháp quan sát
-    "nature",             // Thác nước, hang động, rừng, vườn quốc gia, khu bảo tồn
-
-    // Dịch vụ & Tiện ích có giá trị du lịch
-    "transport_hub",      // Bến xe, bến tàu, ga xe lửa, sân bay — điểm di chuyển của du khách
-    "event_venue",        // Trung tâm hội nghị, nhà thi đấu, không gian sự kiện
+    "restaurant", "cafe", "bar/pub", "bakery",
+    "hotel", "hostel", "homestay",
+    "attraction", "museum", "pagoda/temple", "park",
+    "market", "shopping_mall", "souvenir_shop",
+    "entertainment", "spa/wellness", "sports", "theme_park",
+    "beach", "viewpoint", "nature",
+    "transport_hub", "event_venue",
   ],
-
-  // Ẩn giao diện Chrome (true = chạy ngầm)
   HEADLESS: false,
 };
 
@@ -103,15 +67,53 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Bọc promise với timeout — hủy nếu chờ quá lâu (tránh treo vĩnh viễn).
+ * Dùng cho các API call bên ngoài (Gemini, Groq) có thể không phản hồi.
+ */
+function withTimeout(promise, ms, label) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`Timeout: ${label} không phản hồi sau ${ms / 1000}s`)),
+      ms
+    );
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+
+/**
+ * Kiểm tra và bỏ qua trang Google Consent ("Before you continue").
+ * Có thể xuất hiện lần đầu truy cập Google Maps trong session.
+ */
+async function dismissGoogleConsent(driver) {
+  try {
+    const consentBtns = await driver.findElements(
+      By.css(
+        "button[aria-label*='Accept all'], " +
+        "button[aria-label*='Reject all'], " +
+        "form[action*='consent'] button, " +
+        "button[jsname='higCR']"
+      )
+    );
+    if (consentBtns.length > 0) {
+      await consentBtns[0].click();
+      console.log("  🍪 Đã bỏ qua trang Google Consent.");
+      await sleep(2000);
+    }
+  } catch {
+    // Không có trang consent — bỏ qua
+  }
+}
+
 // Tiện ích đọc/ghi file JSON
 function readInputData(filePath) {
-  console.log(`\n Đang đọc dữ liệu từ: ${filePath}`);
   if (!fs.existsSync(filePath)) {
     throw new Error(`Không tìm thấy file: ${filePath}`);
   }
   const raw = fs.readFileSync(filePath, "utf-8");
   const data = JSON.parse(raw);
-  console.log(` Đọc thành công ${data.length} địa điểm.`);
+  console.log(`📂 Đọc ${data.length} địa điểm từ ${filePath}`);
   return data;
 }
 
@@ -145,8 +147,6 @@ function saveEnrichedPlace(filePath, enrichedPlace) {
 
 // Cài đặt Selenium WebDriver
 async function buildDriver() {
-  console.log("\n🚀 Khởi tạo Selenium WebDriver (Chrome)...");
-
   const options = new chrome.Options();
 
   if (CONFIG.HEADLESS) {
@@ -167,11 +167,11 @@ async function buildDriver() {
     .setChromeOptions(options)
     .build();
 
-  console.log("✅ WebDriver khởi tạo thành công.");
+  console.log("\n🚀 WebDriver sẵn sàng.");
   return driver;
 }
 
-// BƯỚC 2: CÀO BÌNH LUẬN GOOGLE MAPS
+// 2. CÀO BÌNH LUẬN GOOGLE MAPS
 
 /**
  * Kiểm tra xem có đúng là trang địa điểm cụ thể không.
@@ -229,20 +229,20 @@ async function scrapeReviews(driver, place) {
   const { name, lat, lng } = place;
 
   const url = `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`;
-  console.log(`\n  🌐 Điều hướng tới: ${url}`);
 
   await driver.get(url);
   await sleep(CONFIG.SLEEP_AFTER_NAVIGATE);
 
-  // Bước 2a: Xác định đúng trang
+  // Kiểm tra Google Consent (có thể xuất hiện lần đầu trong session)
+  await dismissGoogleConsent(driver);
+
+  // Xác định đúng trang
   const validPage = await isValidPlacePage(driver);
   if (!validPage) {
-    console.warn(`  ⚠️  Không tìm thấy địa điểm khớp trên Google Maps.`);
     return { status: SCRAPE_STATUS.PLACE_NOT_FOUND, reviews: [], placeType: "" };
   }
 
-  // Bước 2a+: Đọc loại hình địa điểm (chữ nhỏ dưới tên - placeType)
-  // Đây là tín hiệu rất quan trọng được truyền cho cả Gemini và Groq
+  // Đọc loại hình địa điểm (chữ nhỏ dưới tên - placeType)
   let placeType = await driver.executeScript(`
     // Cách 1: Qua nút chức năng
     const categoryBtn = document.querySelector("button[jsaction*='category']");
@@ -276,17 +276,16 @@ async function scrapeReviews(driver, place) {
   `);
 
   if (placeType) {
-    console.log(`  🏷️  Loại hình trên Google Maps: "${placeType}"`);
+    // placeType được dùng bởi AI, không cần log
   }
 
-  // Bước 2b: Kiểm tra số lượng đánh giá
+  // Kiểm tra số lượng đánh giá
   const reviewsExist = await hasAnyReviews(driver);
   if (!reviewsExist) {
-    console.log(`  ℹ️  Địa điểm chưa có bình luận nào trên Google Maps.`);
     return { status: SCRAPE_STATUS.NO_REVIEWS, reviews: [], placeType };
   }
 
-  // Bước 2c: Mở tab Đánh giá
+  // Mở tab Đánh giá
   let reviewTabFound = await driver.executeScript(`
     const tabs = Array.from(document.querySelectorAll("button, div[role='tab']"));
     const reviewTab = tabs.find(t => {
@@ -301,7 +300,6 @@ async function scrapeReviews(driver, place) {
   `);
 
   if (!reviewTabFound) {
-    console.warn(`  ⚠️  Không click được tab Đánh giá qua JS, thử dùng XPath...`);
     const reviewTabSelectors = [
       "//button[@aria-label[contains(., 'Reviews')]]",
       "//button[@aria-label[contains(., 'Đánh giá')]]",
@@ -310,7 +308,7 @@ async function scrapeReviews(driver, place) {
     ];
     for (const selector of reviewTabSelectors) {
       try {
-        const tab = await driver.wait(until.elementLocated(By.xpath(selector)), 3000);
+        const tab = await driver.wait(until.elementLocated(By.xpath(selector)), CONFIG.ELEMENT_WAIT_TIMEOUT);
         await tab.click();
         reviewTabFound = true;
         break;
@@ -319,17 +317,17 @@ async function scrapeReviews(driver, place) {
   }
 
   if (reviewTabFound) {
-    console.log(`  ✅ Đã chuyển sang tab Đánh giá.`);
     await sleep(CONFIG.SLEEP_BETWEEN_ACTIONS);
-  } else {
-    console.warn(`  ⚠️  Không tìm thấy tab Đánh giá cụ thể (có thể đang hiển thị tất cả).`);
   }
 
   await sleep(2000);
 
-  // Bước 2d: Cuộn để tải thêm bình luận
-  const scrollTimes = Math.ceil(CONFIG.MAX_REVIEWS / 5);
-  for (let i = 0; i < scrollTimes; i++) {
+  // Cuộn tải thêm bình luận (dừng sớm nếu đủ hoặc hết review mới)
+  const maxScrollTimes = Math.ceil(CONFIG.MAX_REVIEWS / 5);
+  let prevReviewCount = 0;
+  let actualScrolls = 0;
+
+  for (let i = 0; i < maxScrollTimes; i++) {
     await driver.executeScript(`
       let scrollBox = document.querySelector(".rLxhL") || document.querySelector(".DxyBCb, .dS8AEf") || document.querySelector("div[role='main']");
       if (!scrollBox) {
@@ -343,10 +341,23 @@ async function scrapeReviews(driver, place) {
       }
     `);
     await sleep(CONFIG.SLEEP_BETWEEN_ACTIONS);
-  }
-  console.log(`  📜 Đã scroll ${scrollTimes} lần để tải bình luận.`);
+    actualScrolls++;
 
-  // Bước 2e: Mở rộng đoạn text dài bị ẩn
+    // Kiểm tra số review hiện tại — dừng sớm nếu đủ hoặc không còn review mới
+    const currentCount = await driver.executeScript(
+      `return document.querySelectorAll("[data-review-id]").length;`
+    );
+    if (currentCount >= CONFIG.MAX_REVIEWS) {
+      break;
+    }
+    if (i >= 2 && currentCount === prevReviewCount) {
+      break;
+    }
+    prevReviewCount = currentCount;
+  }
+
+
+  // Mở rộng đoạn text dài bị ẩn
   await driver.executeScript(`
     document.querySelectorAll("button.w8nwRe, span.w8nwRe, button[aria-label*='See more'], button[aria-label*='Xem thêm'], button[aria-expanded='false']").forEach(btn => {
       try { 
@@ -356,7 +367,7 @@ async function scrapeReviews(driver, place) {
   `);
   await sleep(1000);
 
-  // Bước 2f: Trích xuất text bình luận
+  // Trích xuất text bình luận
   let reviews = await driver.executeScript(`
     return Array.from(document.querySelectorAll("[data-review-id]")).map(el => {
       const exactSpan = el.querySelector(".wiI7pd") || el.querySelector(".MyEned span");
@@ -381,11 +392,11 @@ async function scrapeReviews(driver, place) {
     return { status: SCRAPE_STATUS.ERROR, reviews: [], placeType: placeType || "" };
   }
 
-  console.log(`  💬 Cào được ${reviews.length} bình luận.`);
+  console.log(`  💬 ${reviews.length} bình luận`);
   return { status: SCRAPE_STATUS.SUCCESS, reviews, placeType: placeType || "" };
 }
 
-// BƯỚC 3: XÂY DỰNG NGỮ CẢNH
+// 3. XÂY DỰNG NGỮ CẢNH
 
 /** Tạo bối cảnh và chấm điểm tin cậy cho AI */
 function buildReviewContext(place, scrapeResult) {
@@ -403,7 +414,13 @@ function buildReviewContext(place, scrapeResult) {
         contextBlock:
           `Thông tin bổ sung từ Google Maps:${placeTypeInfo}\n\n` +
           `Có ${reviews.length} bình luận thực tế từ khách tham quan:\n` +
-          reviews.map((r, i) => `${i + 1}. ${r}`).join("\n"),
+          reviews.map((r, i) => {
+            // Cắt ngắn bình luận dài để tiết kiệm token AI
+            const trimmed = r.length > CONFIG.MAX_REVIEW_LENGTH
+              ? r.substring(0, CONFIG.MAX_REVIEW_LENGTH) + "..."
+              : r;
+            return `${i + 1}. ${trimmed}`;
+          }).join("\n"),
       };
 
     case SCRAPE_STATUS.NO_REVIEWS:
@@ -435,7 +452,7 @@ function buildReviewContext(place, scrapeResult) {
   }
 }
 
-// BƯỚC 4: PHÂN TÍCH AI (Gemini Analyst → Groq Supervisor)
+// 4. PHÂN TÍCH AI (Gemini Analyst → Groq Supervisor)
 
 /**
  * Tạo prompt phân tích cho Gemini (Analyst).
@@ -589,7 +606,7 @@ function classifyAPIError(err) {
 // Bộ đếm lỗi liên tiếp cho từng AI — dùng để phát hiện lỗi kéo dài
 const aiErrorTracker = {
   gemini: { consecutiveFailures: 0, lastError: null },
-  groq:   { consecutiveFailures: 0, lastError: null },
+  groq: { consecutiveFailures: 0, lastError: null },
 };
 
 // Ngưỡng lỗi liên tiếp — vượt qua sẽ kích hoạt cảnh báo nghiêm trọng
@@ -597,100 +614,145 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 
 /**
  * Gọi Gemini với vai trò Analyst.
+ * Tự động retry khi gặp rate limit (429) — chờ 60s rồi thử lại.
  * Trả về kết quả JSON hoặc null nếu lỗi (đồng thời cập nhật error tracker).
  */
 async function callGeminiAnalyst(userPrompt) {
   if (!genAI) return null;
-  try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      systemInstruction: GEMINI_SYSTEM_INSTRUCTION,
-      generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
-    });
-    const res = await model.generateContent(userPrompt);
-    const raw = res.response.text() || "{}";
-    const parsed = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim());
 
-    // Reset tracker khi thành công
-    aiErrorTracker.gemini.consecutiveFailures = 0;
-    aiErrorTracker.gemini.lastError = null;
-    return parsed;
-  } catch (err) {
-    const classified = classifyAPIError(err);
-    aiErrorTracker.gemini.consecutiveFailures++;
-    aiErrorTracker.gemini.lastError = classified;
-    console.warn(`    ⚠️  Gemini Analyst lỗi [${classified.type}]: ${classified.detail}`);
-    console.warn(`    📊 Gemini lỗi liên tiếp: ${aiErrorTracker.gemini.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
-    return null;
+  for (let attempt = 0; attempt <= CONFIG.RATE_LIMIT_MAX_RETRIES; attempt++) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        systemInstruction: GEMINI_SYSTEM_INSTRUCTION,
+        generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+      });
+      const res = await withTimeout(model.generateContent(userPrompt), CONFIG.AI_CALL_TIMEOUT, "Gemini API");
+      const raw = res.response.text() || "{}";
+      const parsed = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim());
+
+      // Reset tracker khi thành công
+      aiErrorTracker.gemini.consecutiveFailures = 0;
+      aiErrorTracker.gemini.lastError = null;
+      return parsed;
+    } catch (err) {
+      const classified = classifyAPIError(err);
+
+      // Rate limit → chờ rồi retry (free tier thường reset mỗi phút)
+      if (classified.type === "RATE_LIMIT" && attempt < CONFIG.RATE_LIMIT_MAX_RETRIES) {
+        const waitSec = (CONFIG.RATE_LIMIT_RETRY_DELAY / 1000) * (attempt + 1);
+        console.warn(`    ⏳ Gemini: Hết quota, chờ ${waitSec}s rồi thử lại (${attempt + 1}/${CONFIG.RATE_LIMIT_MAX_RETRIES})...`);
+        await sleep(waitSec * 1000);
+        continue;
+      }
+
+      // Lỗi khác hoặc đã hết lượt retry → ghi nhận và trả null
+      aiErrorTracker.gemini.consecutiveFailures++;
+      aiErrorTracker.gemini.lastError = classified;
+      console.warn(`    ⚠️  Gemini Analyst lỗi [${classified.type}]: ${classified.detail}`);
+      console.warn(`    📊 Gemini lỗi liên tiếp: ${aiErrorTracker.gemini.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
+      return null;
+    }
   }
+  return null;
 }
 
 /**
  * Gọi Groq với vai trò Supervisor — nhận kết quả Gemini để kiểm định.
- * Trả về kết quả JSON hoặc null nếu lỗi (đồng thời cập nhật error tracker).
+ * Tự động retry khi gặp rate limit (429) — chờ 60s rồi thử lại.
  */
 async function callGroqSupervisor(supervisorPrompt) {
   if (!groq) return null;
-  try {
-    const res = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: GROQ_SUPERVISOR_INSTRUCTION },
-        { role: "user", content: supervisorPrompt },
-      ],
-      temperature: 0.1, // Thấp hơn để Groq đưa ra quyết định nhất quán hơn
-      max_tokens: 600,
-      response_format: { type: "json_object" },
-    });
-    const raw = res.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim());
 
-    // Reset tracker khi thành công
-    aiErrorTracker.groq.consecutiveFailures = 0;
-    aiErrorTracker.groq.lastError = null;
-    return parsed;
-  } catch (err) {
-    const classified = classifyAPIError(err);
-    aiErrorTracker.groq.consecutiveFailures++;
-    aiErrorTracker.groq.lastError = classified;
-    console.warn(`    ⚠️  Groq Supervisor lỗi [${classified.type}]: ${classified.detail}`);
-    console.warn(`    📊 Groq lỗi liên tiếp: ${aiErrorTracker.groq.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
-    return null;
+  for (let attempt = 0; attempt <= CONFIG.RATE_LIMIT_MAX_RETRIES; attempt++) {
+    try {
+      const res = await withTimeout(
+        groq.chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: GROQ_SUPERVISOR_INSTRUCTION },
+            { role: "user", content: supervisorPrompt },
+          ],
+          temperature: 0.1,
+          max_tokens: 600,
+          response_format: { type: "json_object" },
+        }),
+        CONFIG.AI_CALL_TIMEOUT,
+        "Groq Supervisor API"
+      );
+      const raw = res.choices[0]?.message?.content || "{}";
+      const parsed = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim());
+
+      aiErrorTracker.groq.consecutiveFailures = 0;
+      aiErrorTracker.groq.lastError = null;
+      return parsed;
+    } catch (err) {
+      const classified = classifyAPIError(err);
+
+      if (classified.type === "RATE_LIMIT" && attempt < CONFIG.RATE_LIMIT_MAX_RETRIES) {
+        const waitSec = (CONFIG.RATE_LIMIT_RETRY_DELAY / 1000) * (attempt + 1);
+        console.warn(`    ⏳ Groq Supervisor: Hết quota, chờ ${waitSec}s rồi thử lại (${attempt + 1}/${CONFIG.RATE_LIMIT_MAX_RETRIES})...`);
+        await sleep(waitSec * 1000);
+        continue;
+      }
+
+      aiErrorTracker.groq.consecutiveFailures++;
+      aiErrorTracker.groq.lastError = classified;
+      console.warn(`    ⚠️  Groq Supervisor lỗi [${classified.type}]: ${classified.detail}`);
+      console.warn(`    📊 Groq lỗi liên tiếp: ${aiErrorTracker.groq.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
+      return null;
+    }
   }
+  return null;
 }
 
 /**
  * Gọi Groq với vai trò Analyst (fallback khi Gemini lỗi).
- * Dùng cùng prompt Analyst nhưng gọi qua Groq thay vì Gemini.
+ * Tự động retry khi gặp rate limit (429) — chờ 60s rồi thử lại.
  */
 async function callGroqAnalystFallback(analystPrompt) {
   if (!groq) return null;
-  try {
-    const res = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: GEMINI_SYSTEM_INSTRUCTION },
-        { role: "user", content: analystPrompt },
-      ],
-      temperature: 0.2,
-      max_tokens: 600,
-      response_format: { type: "json_object" },
-    });
-    const raw = res.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim());
 
-    // Reset tracker khi thành công
-    aiErrorTracker.groq.consecutiveFailures = 0;
-    aiErrorTracker.groq.lastError = null;
-    return parsed;
-  } catch (err) {
-    const classified = classifyAPIError(err);
-    aiErrorTracker.groq.consecutiveFailures++;
-    aiErrorTracker.groq.lastError = classified;
-    console.warn(`    ⚠️  Groq Analyst (fallback) lỗi [${classified.type}]: ${classified.detail}`);
-    console.warn(`    📊 Groq lỗi liên tiếp: ${aiErrorTracker.groq.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
-    return null;
+  for (let attempt = 0; attempt <= CONFIG.RATE_LIMIT_MAX_RETRIES; attempt++) {
+    try {
+      const res = await withTimeout(
+        groq.chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: GEMINI_SYSTEM_INSTRUCTION },
+            { role: "user", content: analystPrompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 600,
+          response_format: { type: "json_object" },
+        }),
+        CONFIG.AI_CALL_TIMEOUT,
+        "Groq Analyst (fallback) API"
+      );
+      const raw = res.choices[0]?.message?.content || "{}";
+      const parsed = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim());
+
+      aiErrorTracker.groq.consecutiveFailures = 0;
+      aiErrorTracker.groq.lastError = null;
+      return parsed;
+    } catch (err) {
+      const classified = classifyAPIError(err);
+
+      if (classified.type === "RATE_LIMIT" && attempt < CONFIG.RATE_LIMIT_MAX_RETRIES) {
+        const waitSec = (CONFIG.RATE_LIMIT_RETRY_DELAY / 1000) * (attempt + 1);
+        console.warn(`    ⏳ Groq fallback: Hết quota, chờ ${waitSec}s rồi thử lại (${attempt + 1}/${CONFIG.RATE_LIMIT_MAX_RETRIES})...`);
+        await sleep(waitSec * 1000);
+        continue;
+      }
+
+      aiErrorTracker.groq.consecutiveFailures++;
+      aiErrorTracker.groq.lastError = classified;
+      console.warn(`    ⚠️  Groq Analyst (fallback) lỗi [${classified.type}]: ${classified.detail}`);
+      console.warn(`    📊 Groq lỗi liên tiếp: ${aiErrorTracker.groq.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
+      return null;
+    }
   }
+  return null;
 }
 
 // Chuẩn hoá kết quả AI
@@ -699,8 +761,12 @@ function validateAIResult(raw, fallbackCategory) {
   const result = { ...raw };
 
   if (!CONFIG.VALID_CATEGORIES.includes(result.category)) {
-    console.warn(`    ⚠️  Category "${result.category}" không hợp lệ → fallback về "${fallbackCategory}"`);
-    result.category = fallbackCategory;
+    // Nếu fallbackCategory (category gốc từ data) cũng không hợp lệ → dùng "attraction" làm ultimate fallback
+    const safeFallback = CONFIG.VALID_CATEGORIES.includes(fallbackCategory)
+      ? fallbackCategory
+      : "attraction";
+    console.warn(`    ⚠️  Category "${result.category}" không hợp lệ → fallback về "${safeFallback}"`);
+    result.category = safeFallback;
   }
   if (!Array.isArray(result.tags)) result.tags = [];
   result.tags = result.tags
@@ -765,29 +831,19 @@ async function analyzeWithAI(place, scrapeResult) {
   let aiSource;
   let supervisorNote = "";
 
-  // === BƯỚC 1: Gemini Analyst phân tích ===
-  console.log(`  🔍 [Bước 1/2] Gemini Analyst đang phân tích...`);
+  // Phân tích bằng Gemini Analyst
   const geminiRaw = await callGeminiAnalyst(geminiPrompt);
   const geminiResult = geminiRaw ? validateAIResult(geminiRaw, place.category) : null;
 
-  if (geminiResult) {
-    console.log(`    → Gemini: category="${geminiResult.category}", tags=[${geminiResult.tags.slice(0, 3).join(", ")}...]`);
-  } else {
-    console.warn(`    → Gemini không trả kết quả hoặc lỗi.`);
-    // Cảnh báo nếu Gemini lỗi liên tiếp nhiều lần
-    if (isAIPersistentlyFailing("gemini")) {
-      console.error(`    🔴 CẢNH BÁO: Gemini đã lỗi liên tiếp ${aiErrorTracker.gemini.consecutiveFailures} lần!`);
-      console.error(`       Loại lỗi: [${aiErrorTracker.gemini.lastError?.type}] ${aiErrorTracker.gemini.lastError?.detail}`);
-    }
+  if (!geminiResult && isAIPersistentlyFailing("gemini")) {
+    console.error(`  🔴 Gemini lỗi liên tiếp ${aiErrorTracker.gemini.consecutiveFailures}x [${aiErrorTracker.gemini.lastError?.type}]`);
   }
 
-  // === BƯỚC 2: Xử lý theo kết quả Gemini ===
+  // Phân tích và dự phòng với Groq Supervisor
 
   if (geminiResult && groq) {
     // ────────────────────────────────────────────
     // CASE 1: Gemini OK + Groq available → Pipeline đầy đủ
-    // ────────────────────────────────────────────
-    console.log(`  🔎 [Bước 2/2] Groq Supervisor đang kiểm định...`);
     const supervisorPrompt = buildGroqSupervisorPrompt(place, contextBlock, geminiResult);
     const groqRaw = await callGroqSupervisor(supervisorPrompt);
     const groqResult = groqRaw ? validateAIResult(groqRaw, geminiResult.category) : null;
@@ -799,22 +855,17 @@ async function analyzeWithAI(place, scrapeResult) {
       const tagsChanged = JSON.stringify(groqResult.tags.sort()) !== JSON.stringify(geminiResult.tags.sort());
 
       if (categoryChanged || tagsChanged) {
-        console.log(`    → Groq đã sửa: category="${groqResult.category}" (Gemini đề xuất: "${geminiResult.category}")`);
-        if (supervisorNote) console.log(`    → Lý do: ${supervisorNote}`);
         aiSource = "groq-corrected";
       } else {
-        console.log(`    → Groq xác nhận kết quả Gemini ✅`);
         aiSource = "dual-confirmed";
       }
       finalResult = { category: groqResult.category, tags: groqResult.tags };
 
     } else {
       // Groq lỗi → fallback về Gemini (1 AI lỗi, vẫn tiếp tục)
-      console.warn(`    ⚠️  Groq Supervisor lỗi — fallback giữ kết quả Gemini.`);
+      console.warn(`  ⚠️ Groq lỗi, dùng Gemini`);
       if (isAIPersistentlyFailing("groq")) {
-        console.error(`    🔴 CẢNH BÁO: Groq đã lỗi liên tiếp ${aiErrorTracker.groq.consecutiveFailures} lần!`);
-        console.error(`       Loại lỗi: [${aiErrorTracker.groq.lastError?.type}] ${aiErrorTracker.groq.lastError?.detail}`);
-        console.error(`       → Pipeline đang chạy ở chế độ Gemini-only (giảm độ chính xác).`);
+        console.error(`  🔴 Groq lỗi liên tiếp ${aiErrorTracker.groq.consecutiveFailures}x [${aiErrorTracker.groq.lastError?.type}]`);
       }
       finalResult = geminiResult;
       aiSource = "gemini-only";
@@ -826,21 +877,18 @@ async function analyzeWithAI(place, scrapeResult) {
     // ────────────────────────────────────────────
     finalResult = geminiResult;
     aiSource = "gemini-only";
-    console.log(`  ℹ️  Chỉ có Gemini (không có GROQ_API_KEY).`);
 
   } else if (!geminiResult && groq) {
     // ────────────────────────────────────────────
     // CASE 3: Gemini lỗi + Groq available → Groq tự phân tích (fallback)
     // ────────────────────────────────────────────
-    console.log(`  🔎 Gemini lỗi, Groq tự phân tích (fallback mode)...`);
+    console.log(`  🔎 Groq fallback...`);
     const groqFallbackRaw = await callGroqAnalystFallback(geminiPrompt);
     const groqFallbackResult = groqFallbackRaw ? validateAIResult(groqFallbackRaw, place.category) : null;
 
     if (groqFallbackResult) {
-      // Groq fallback OK → 1 AI lỗi (Gemini), vẫn tiếp tục
       finalResult = groqFallbackResult;
       aiSource = "groq-only";
-      console.log(`    → Groq fallback: category="${groqFallbackResult.category}", tags=[${groqFallbackResult.tags.slice(0, 3).join(", ")}...]`);
     } else {
       // ────────────────────────────────────────────
       // CẢ 2 AI ĐỀU LỖI → DỪNG CHƯƠNG TRÌNH
@@ -848,21 +896,14 @@ async function analyzeWithAI(place, scrapeResult) {
       throw new Error(buildDualFailureErrorMessage());
     }
 
-  } else if (!geminiResult && !groq) {
-    // ────────────────────────────────────────────
-    // CASE 4: Gemini lỗi + Không có Groq key → Không còn AI nào
-    // ────────────────────────────────────────────
-    throw new Error(buildDualFailureErrorMessage());
-
   } else {
     // ────────────────────────────────────────────
-    // CASE 5: Không có key nào / edge case
+    // CASE 4: Không còn AI nào khả dụng (hết key / cả 2 đều lỗi)
     // ────────────────────────────────────────────
     throw new Error(buildDualFailureErrorMessage());
   }
 
-  console.log(`  ✅ Kết quả cuối: category="${finalResult.category}", tags=[${finalResult.tags.join(", ")}]`);
-  console.log(`     Source: ${aiSource}${supervisorNote ? ` | Note: ${supervisorNote}` : ""}`);
+  console.log(`  ✅ ${finalResult.category} [${aiSource}] tags=${finalResult.tags.length}`);
 
   return { ...finalResult, confidence, aiSource, supervisorNote };
 }
@@ -885,15 +926,11 @@ async function main() {
   }
 
   const aiStatus = [];
-  if (geminiKey) aiStatus.push("✅ Gemini (Analyst)");
-  else aiStatus.push("❌ Gemini (thiếu GEMINI_API_KEY)");
-  if (groqKey) aiStatus.push("✅ Groq LLaMA (Supervisor)");
-  else aiStatus.push("❌ Groq (thiếu GROQ_API_KEY)");
-  console.log(`\n🤖 AI Engines: ${aiStatus.join(" | ")}`);
-  if (geminiKey && groqKey) {
-    console.log("🔄 Pipeline: Gemini phân tích → Groq xác minh & sửa → Kết quả chính xác nhất!");
-    console.log(`📂 ${CONFIG.VALID_CATEGORIES.length} categories khả dụng.`);
-  }
+  if (geminiKey) aiStatus.push("✅ Gemini");
+  else aiStatus.push("❌ Gemini");
+  if (groqKey) aiStatus.push("✅ Groq");
+  else aiStatus.push("❌ Groq");
+  console.log(`🤖 AI: ${aiStatus.join(" | ")}`);
 
   const places = readInputData(CONFIG.INPUT_FILE);
 
@@ -902,7 +939,7 @@ async function main() {
     try {
       const existing = JSON.parse(fs.readFileSync(CONFIG.OUTPUT_FILE, "utf-8"));
       existing.forEach((p) => alreadyDone.add(`${p.name}_${p.lat}_${p.lng}`));
-      console.log(`\n♻️  Tìm thấy ${alreadyDone.size} địa điểm đã xử lý. Script sẽ bỏ qua và tiếp tục.`);
+      console.log(`♻️  ${alreadyDone.size} địa điểm đã xử lý, bỏ qua.`);
     } catch {
       alreadyDone = new Set();
     }
@@ -916,17 +953,15 @@ async function main() {
       const place = places[i];
       const placeKey = `${place.name}_${place.lat}_${place.lng}`;
 
-      console.log(`\n${"─".repeat(60)}`);
-      console.log(`📍 [${i + 1}/${places.length}] Đang xử lý: "${place.name}"`);
-
       if (alreadyDone.has(placeKey)) {
-        console.log(`  ⏭️  Đã xử lý rồi, bỏ qua.`);
         continue;
       }
 
+      console.log(`\n📍 [${i + 1}/${places.length}] "${place.name}"`);
+
       const enrichedPlace = { ...place };
 
-      // Bước 2: Trích xuất Dữ liệu (Scraping)
+      // Trích xuất Dữ liệu (Scraping)
       let scrapeResult = { status: SCRAPE_STATUS.ERROR, reviews: [], placeType: "" };
       try {
         scrapeResult = await scrapeReviews(driver, place);
@@ -936,30 +971,24 @@ async function main() {
       }
 
       const statusLabel = {
-        [SCRAPE_STATUS.SUCCESS]: `✅ Cào được ${scrapeResult.reviews.length} bình luận`,
-        [SCRAPE_STATUS.NO_REVIEWS]: `ℹ️  Địa điểm chưa có bình luận`,
-        [SCRAPE_STATUS.PLACE_NOT_FOUND]: `❓ Không tìm thấy địa điểm trên Maps`,
-        [SCRAPE_STATUS.ERROR]: `⚠️  Lỗi kỹ thuật khi scrape`,
+        [SCRAPE_STATUS.SUCCESS]: `${scrapeResult.reviews.length} reviews`,
+        [SCRAPE_STATUS.NO_REVIEWS]: `no reviews`,
+        [SCRAPE_STATUS.PLACE_NOT_FOUND]: `not found`,
+        [SCRAPE_STATUS.ERROR]: `scrape error`,
       }[scrapeResult.status];
-      console.log(`  → Scrape status: ${statusLabel}`);
-      if (scrapeResult.placeType) {
-        console.log(`  → placeType (Google Maps): "${scrapeResult.placeType}"`);
-      }
+      const placeTypeLabel = scrapeResult.placeType ? ` | ${scrapeResult.placeType}` : "";
+      console.log(`  🌐 ${statusLabel}${placeTypeLabel}`);
 
       await sleep(1000);
 
-      // Bước 3: Phân tích qua AI (Gemini → Groq)
+      // Phân tích qua AI (Gemini → Groq)
       try {
         const aiResult = await analyzeWithAI(place, scrapeResult);
         enrichedPlace.category = aiResult.category;
         enrichedPlace.tags = aiResult.tags;
         enrichedPlace._enrichMeta = {
           scrapeStatus: scrapeResult.status,
-          placeType: scrapeResult.placeType || null,
-          reviewCount: scrapeResult.reviews.length,
-          aiConfidence: aiResult.confidence,
           aiSource: aiResult.aiSource,
-          supervisorNote: aiResult.supervisorNote || null,
           enrichedAt: new Date().toISOString(),
         };
       } catch (aiError) {
@@ -968,25 +997,20 @@ async function main() {
         throw aiError;
       }
 
-      // Bước 4: Ghi kết quả vào file
+      // Ghi kết quả vào file
       saveEnrichedPlace(CONFIG.OUTPUT_FILE, enrichedPlace);
-      console.log(`  💾 Đã lưu vào ${CONFIG.OUTPUT_FILE}`);
 
       alreadyDone.add(placeKey);
 
       if (i < places.length - 1) {
-        console.log(`  ⏳ Chờ ${CONFIG.SLEEP_BETWEEN_PLACES / 1000}s trước địa điểm tiếp theo...`);
         await sleep(CONFIG.SLEEP_BETWEEN_PLACES);
       }
     }
 
-    console.log(`\n${"=".repeat(60)}`);
-    console.log(`🎉 HOÀN THÀNH! Kết quả đã lưu tại: ${CONFIG.OUTPUT_FILE}`);
-    console.log(`${"=".repeat(60)}\n`);
+    console.log(`\n🎉 HOÀN THÀNH! ${CONFIG.OUTPUT_FILE}`);
   } finally {
     if (driver) {
       await driver.quit();
-      console.log("🔒 WebDriver đã đóng.");
     }
   }
 }
