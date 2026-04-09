@@ -11,7 +11,7 @@ export default async function AppPage() {
   if (!user) redirect("/login");
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <Header user={user} />
       <AppContent />
     </div>
