@@ -3,44 +3,39 @@
 const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const fs = require("fs");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
 
-// ─────────────────────────────────────────────────────────────────────────────
 // CẤU HÌNH
-// ─────────────────────────────────────────────────────────────────────────────
 
 const CONFIG = {
-  INPUT_FILE:  "data/data.json",
+  INPUT_FILE: "data/data.json",
   OUTPUT_FILE: "data/data_enriched.json",
 
   // Scraping
-  MAX_REVIEWS:            10,
-  MAX_REVIEW_LENGTH:      200,
-  SLEEP_BETWEEN_ACTIONS:  3000,
-  SLEEP_AFTER_NAVIGATE:   5000,
-  SLEEP_BETWEEN_PLACES:   15000,
-  ELEMENT_WAIT_TIMEOUT:   5000,
+  MAX_REVIEWS: 15,
+  MAX_REVIEW_LENGTH: 250,
+  SLEEP_BETWEEN_ACTIONS: 1500,
+  SLEEP_AFTER_NAVIGATE: 3500,
+  SLEEP_BETWEEN_PLACES: 5000,
+  ELEMENT_WAIT_TIMEOUT: 5000,
 
   // AI context
-  AI_CONTEXT_REVIEW_LIMIT:            8,
+  AI_CONTEXT_REVIEW_LIMIT: 7,
   AI_CONTEXT_REVIEW_LIMIT_CLEAR_TYPE: 5,
-  AI_CONTEXT_REVIEW_LIMIT_AMBIGUOUS:  10,
+  AI_CONTEXT_REVIEW_LIMIT_AMBIGUOUS: 8,
 
   // Rate limiting
-  // Gemini free tier thường thấp và dễ nghẽn theo phút → giữ nhịp bảo thủ
-  GEMINI_RPM_PER_KEY:     5,
-  // Groq thường chịu tải tốt hơn, nhưng vẫn giảm để đồng bộ pipeline free-safe
-  GROQ_RPM_PER_KEY:       10,
-  // OpenRouter free không SLA ổn định, dùng mức thấp giống Gemini
-  OPENROUTER_RPM_PER_KEY: 5,
-  // Thời gian mỗi request OpenRouter được phép thử (ms); 3 model × 8s = 24s < timeout tổng
-  OPENROUTER_PER_MODEL_TIMEOUT: 8000,
+  // Groq free tier: 30 req/phút mỗi key — tính theo tổng số key
+  GROQ_RPM_PER_KEY: 10,         // bảo thủ để tránh burst
+  // Pollinations: có token → 1 req/5s mỗi token = 12 RPM/token
+  POLLINATIONS_RPM_PER_TOKEN: 10,
+  // G4F.dev: free, không cần key, dùng mức nhẹ
+  G4F_RPM: 15,
 
   // API call
-  AI_CALL_TIMEOUT:        30000,  // timeout tổng cho 1 lần gọi AI
-  KEY_COOLDOWN_MS:        5 * 60 * 1000,  // 5 phút cooldown khi key bị 429
-  MAX_RETRIES_PER_KEY:    2,
+  AI_CALL_TIMEOUT: 30000,
+  KEY_COOLDOWN_MS: 5 * 60 * 1000,  // 5 phút cooldown khi key bị 429
+  MAX_RETRIES_PER_KEY: 2,
 
   // Misc
   HEADLESS: false,
@@ -56,17 +51,15 @@ const CONFIG = {
 };
 
 const SCRAPE_STATUS = {
-  SUCCESS:         "success",
-  NO_REVIEWS:      "no_reviews",
+  SUCCESS: "success",
+  NO_REVIEWS: "no_reviews",
   PLACE_NOT_FOUND: "place_not_found",
-  ERROR:           "error",
+  ERROR: "error",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // KHỞI TẠO API KEYS
-// ─────────────────────────────────────────────────────────────────────────────
 
-let externalKeys = { GEMINI_API_KEYS: [], GROQ_API_KEYS: [], OPENROUTER_API_KEYS: [] };
+let externalKeys = { GROQ_API_KEYS: [], POLLINATIONS_TOKENS: [] };
 try {
   if (fs.existsSync("api_keys.json")) {
     externalKeys = JSON.parse(fs.readFileSync("api_keys.json", "utf-8"));
@@ -80,49 +73,20 @@ function loadKeys(fromFile, envMulti, envSingle) {
   return raw.split(",").map(k => k.trim()).filter(k => k && !k.includes("YOUR_"));
 }
 
-const geminiKeys     = loadKeys(externalKeys.GEMINI_API_KEYS,     "GEMINI_API_KEYS",     "GEMINI_API_KEY");
-const groqKeys       = loadKeys(externalKeys.GROQ_API_KEYS,       "GROQ_API_KEYS",       "GROQ_API_KEY");
-const openRouterKeys = loadKeys(externalKeys.OPENROUTER_API_KEYS, "OPENROUTER_API_KEYS", "OPENROUTER_API_KEY");
+const groqKeys = loadKeys(externalKeys.GROQ_API_KEYS, "GROQ_API_KEYS", "GROQ_API_KEY");
+const groqClients = groqKeys.map(key => new Groq({ apiKey: key }));
 
-const geminiClients = geminiKeys.map(key => new GoogleGenerativeAI(key));
-const groqClients   = groqKeys.map(key => new Groq({ apiKey: key }));
+// Pollinations hỗ trợ nhiều token luân phiên — mỗi token có rate limit riêng
+const pollinationsTokens = loadKeys(externalKeys.POLLINATIONS_TOKENS, "POLLINATIONS_TOKENS", "POLLINATIONS_TOKEN");
+// Nếu không có token nào → dùng anonymous (rate limit thấp hơn)
+if (pollinationsTokens.length === 0) pollinationsTokens.push("");
 
-function patchGoogleApiEndpointTypoFromEnv() {
-  const keys = [
-    "GOOGLE_API_BASE_URL",
-    "GOOGLE_GENERATIVE_AI_API_ENDPOINT",
-    "GOOGLE_GENERATIVE_AI_BASE_URL",
-  ];
-  for (const k of keys) {
-    const v = process.env[k];
-    if (!v) continue;
-    if (v.includes("googlleapis.com")) {
-      process.env[k] = v.replace(/googlleapis\.com/g, "googleapis.com");
-      console.warn(`⚠️  Đã tự sửa typo endpoint trong ${k}: googlleapis.com -> googleapis.com`);
-    }
-  }
-}
-
-patchGoogleApiEndpointTypoFromEnv();
-
-// OpenRouter models (có thể override qua env OPENROUTER_MODELS)
-const OPENROUTER_MODELS = (
-  process.env.OPENROUTER_MODELS ||
-  "meta-llama/llama-3.1-8b-instruct:free,mistralai/mistral-7b-instruct:free,google/gemma-2-9b-it:free,qwen/qwen-2.5-7b-instruct:free,deepseek/deepseek-r1-distill-llama-70b:free"
-).split(",").map(m => m.trim()).filter(Boolean);
-
-let openRouterModelCursor = 0;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RATE LIMITER — Token Bucket đơn giản
-// Đo khoảng cách giữa khi response VỀ (không phải khi gửi đi),
-// tránh burst ẩn khi request mất nhiều giây.
-// ─────────────────────────────────────────────────────────────────────────────
+// BỘ KIỂM SOÁT TỐC ĐỘ (RATE LIMITER)
 
 class RateLimiter {
   constructor(requestsPerMinute) {
     this.minIntervalMs = (60 * 1000) / requestsPerMinute;
-    this.lastDoneTime  = 0;  // thời điểm request trước HOÀN THÀNH (không phải bắt đầu)
+    this.lastDoneTime = 0;
   }
 
   async throttle() {
@@ -137,21 +101,19 @@ class RateLimiter {
   }
 }
 
-const geminiLimiter     = new RateLimiter(Math.max(1, geminiClients.length)  * CONFIG.GEMINI_RPM_PER_KEY);
-const groqLimiter       = new RateLimiter(Math.max(1, groqClients.length)    * CONFIG.GROQ_RPM_PER_KEY);
-const openRouterLimiter = new RateLimiter(Math.max(1, openRouterKeys.length) * CONFIG.OPENROUTER_RPM_PER_KEY);
+const groqLimiter = new RateLimiter(Math.max(1, groqClients.length) * CONFIG.GROQ_RPM_PER_KEY);
+// Pollinations: tổng RPM = số token × RPM/token
+const pollinationsLimiter = new RateLimiter(Math.max(1, pollinationsTokens.filter(t => t).length) * CONFIG.POLLINATIONS_RPM_PER_TOKEN);
+const g4fLimiter = new RateLimiter(CONFIG.G4F_RPM);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// KEY COOLDOWN — bỏ qua key đang bị rate-limit
-// ─────────────────────────────────────────────────────────────────────────────
+// THỜI GIAN CHỜ PHỤC HỒI KEY (COOLDOWN)
 
 const keyState = {
-  gemini:     geminiClients.map(()  => ({ cooldownUntil: 0 })),
-  groq:       groqClients.map(()   => ({ cooldownUntil: 0 })),
-  openrouter: openRouterKeys.map(() => ({ cooldownUntil: 0 })),
+  groq: groqClients.map(() => ({ cooldownUntil: 0 })),
+  pollinations: pollinationsTokens.map(() => ({ cooldownUntil: 0 })),
 };
 
-const rrCounters = { gemini: 0, groq: 0, openrouter: 0 };
+const rrCounters = { groq: 0, pollinations: 0 };
 
 function getAvailableClient(clients, states, aiName) {
   if (clients.length === 0) return null;
@@ -179,17 +141,13 @@ function setCooldown(aiName, keyIndex) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EXPONENTIAL BACKOFF + JITTER
-// ─────────────────────────────────────────────────────────────────────────────
+// TĂNG DẦN THỜI GIAN CHỜ KHI LỖI (BACKOFF)
 
 function calcBackoffMs(attempt, baseMs = 2000, maxMs = 120000) {
   return Math.min(baseMs * Math.pow(2, attempt) + Math.random() * 1000, maxMs);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TIỆN ÍCH
-// ─────────────────────────────────────────────────────────────────────────────
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -209,66 +167,68 @@ function normalizeText(text) {
     .trim();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LỖI API — phân loại và quyết định retry
-// ─────────────────────────────────────────────────────────────────────────────
+// LỖI API
 
 function classifyAPIError(err) {
-  const msg    = err.message || "";
+  const msg = err.message || "";
   const status = String(err.status || err.statusCode || err.code || "");
   const combined = `${msg} ${status}`;
 
   if (/401|403|invalid.*key|authentication/i.test(combined))
-    return { type: "AUTH",       detail: "API key không hợp lệ hoặc đã hết hạn" };
+    return { type: "AUTH", detail: "API key không hợp lệ hoặc đã hết hạn" };
   if (/429|rate.?limit|quota|resource.?exhausted/i.test(combined))
     return { type: "RATE_LIMIT", detail: "Hết hạn ngạch (429)" };
   if (/500|502|503|504|unavailable|internal/i.test(combined))
-    return { type: "SERVER",     detail: "Lỗi phía server (5xx)" };
+    return { type: "SERVER", detail: "Lỗi phía server (5xx)" };
   if (/timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|network/i.test(combined))
-    return { type: "NETWORK",    detail: "Lỗi mạng hoặc timeout" };
+    return { type: "NETWORK", detail: "Lỗi mạng hoặc timeout" };
   if (/INVALID_JSON/i.test(msg))
-    return { type: "PARSE",      detail: `Không parse được JSON: ${msg.slice(0, 80)}` };
-  return { type: "UNKNOWN",      detail: msg || "Lỗi không xác định" };
+    return { type: "PARSE", detail: `Không parse được JSON: ${msg.slice(0, 80)}` };
+  return { type: "UNKNOWN", detail: msg || "Lỗi không xác định" };
 }
 
 const RETRYABLE_ERRORS = new Set(["RATE_LIMIT", "NETWORK", "SERVER", "PARSE"]);
 
-// ─────────────────────────────────────────────────────────────────────────────
 // BỘ ĐẾM LỖI LIÊN TIẾP
-// ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 const aiErrorTracker = {
-  gemini:     { consecutiveFailures: 0, lastError: null },
-  groq:       { consecutiveFailures: 0, lastError: null },
-  openrouter: { consecutiveFailures: 0, lastError: null },
+  groq: { consecutiveFailures: 0, lastError: null },
+  pollinations: { consecutiveFailures: 0, lastError: null },
+  g4f: { consecutiveFailures: 0, lastError: null },
 };
 
 function recordSuccess(aiName) {
-  aiErrorTracker[aiName].consecutiveFailures = 0;
-  aiErrorTracker[aiName].lastError = null;
+  if (aiErrorTracker[aiName]) {
+    aiErrorTracker[aiName].consecutiveFailures = 0;
+    aiErrorTracker[aiName].lastError = null;
+  }
 }
 
 function recordFailure(aiName, classified) {
-  aiErrorTracker[aiName].consecutiveFailures++;
-  aiErrorTracker[aiName].lastError = classified;
+  if (aiErrorTracker[aiName]) {
+    aiErrorTracker[aiName].consecutiveFailures++;
+    aiErrorTracker[aiName].lastError = classified;
+  }
 }
 
 function isAIPersistentlyFailing(aiName) {
-  return aiErrorTracker[aiName].consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
+  return (aiErrorTracker[aiName]?.consecutiveFailures ?? 0) >= MAX_CONSECUTIVE_FAILURES;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PARSE JSON TỪ MODEL OUTPUT
-// ─────────────────────────────────────────────────────────────────────────────
+// ĐỌC DỮ LIỆU JSON TỪ KẾT QUẢ AI TRẢ VỀ
 
 function parseModelJSON(rawText) {
   const raw = String(rawText || "").trim();
   if (!raw) throw new Error("Empty model response");
 
-  const sanitized = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  // Strip thinking blocks
+  const deThought = raw
+    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
+    .trim();
 
-  // Thử parse thẳng
+  const sanitized = deThought.replace(/```json/gi, "").replace(/```/g, "").trim();
+
   try { return JSON.parse(sanitized); } catch { /* tiếp tục */ }
 
   // Fallback: tìm JSON object/array cân bằng đầu tiên
@@ -286,7 +246,7 @@ function parseModelJSON(rawText) {
         continue;
       }
       if (ch === "\"") { inStr = true; continue; }
-      if (ch === open)  depth++;
+      if (ch === open) depth++;
       if (ch === close) {
         depth--;
         if (depth === 0) {
@@ -299,23 +259,17 @@ function parseModelJSON(rawText) {
   throw new Error(`INVALID_JSON: ${sanitized.slice(0, 80)}`);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SYSTEM INSTRUCTIONS
-// ─────────────────────────────────────────────────────────────────────────────
+// CÂU LỆNH HỆ THỐNG (SYSTEM INSTRUCTIONS CHO AI)
 
-const ANALYST_SYSTEM = `Bạn phân loại địa điểm du lịch Việt Nam.
+const ANALYST_SYSTEM = `Bạn là chuyên gia phân tích địa điểm.
+Nhiệm vụ: Phân loại chính xác và trích xuất điểm nổi bật thành tags ngắn gọn (Tiếng Việt có dấu).
 Ưu tiên bằng chứng: placeType Google Maps > bình luận > tên địa điểm.
-Không sao chép category gốc nếu mâu thuẫn dữ liệu thực tế.
-CHỈ TRẢ VỀ 1 JSON OBJECT THUẦN: không markdown, không code fence, không lời mở đầu.`;
+CHỈ TRẢ VỀ JSON THUẦN, không giải thích.`;
 
-const SUPERVISOR_SYSTEM = `Bạn kiểm định kết quả phân loại địa điểm du lịch.
-Nếu đúng thì giữ nguyên; nếu sai/thiếu thì sửa category hoặc tags.
-Ưu tiên bằng chứng: placeType > bình luận > tên.
-CHỈ TRẢ VỀ 1 JSON OBJECT THUẦN; ghi chú ngắn trong "supervisorNote".`;
+const SUPERVISOR_SYSTEM = `Bạn là giám thị kiểm định. Kiểm tra category và tối ưu hóa tags thành những điểm nổi bật đặc sắc nhất (Tiếng Việt có dấu, cực kỳ ngắn gọn).
+CHỈ TRẢ VỀ JSON THUẦN, không giải thích dài dòng.`;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PROMPT BUILDERS
-// ─────────────────────────────────────────────────────────────────────────────
+// TẠO PROMPT DỮ LIỆU ĐỂ GỬI CHO AI
 
 function buildAnalystPrompt(place, contextBlock) {
   const catList = CONFIG.VALID_CATEGORIES.map(c => `"${c}"`).join(", ");
@@ -329,9 +283,9 @@ Thông tin địa điểm:
 Dữ liệu thực tế từ Google Maps:
 ${contextBlock}
 
-Trả về JSON đúng 2 trường:
-- "category": chọn duy nhất 1 giá trị trong danh sách: ${catList}
-- "tags": tối đa 10 tag, viết thường, tiếng Việt không dấu, không dấu gạch ngang.
+Trả về JSON chứa 2 trường:
+- "category": CHỌN 1 từ: ${catList}
+- "tags": 5-10 tag ngắn gọn (Tiếng Việt có dấu, chữ thường). Lấy đúng ĐIỂM NỔI BẬT NHẤT (vidụ: "kiến trúc pháp", "ven sông", "view hoàng hôn", "chụp hình đẹp", "mua sắm", "đồ cổ"). Tránh tag sáo rỗng vô nghĩa.
 
 Quy tắc phân loại bắt buộc:
 - "Bưu điện TP.HCM", "Nhà hát Lớn", công trình lịch sử nổi tiếng → "attraction"
@@ -342,9 +296,10 @@ Quy tắc phân loại bắt buộc:
 - Nếu địa điểm đa chức năng, chọn category theo chức năng chính.
 
 Quy tắc tag:
-- Ưu tiên tag mô tả loại hình, đối tượng, trải nghiệm, thời điểm, điểm nổi bật.
-- Không dùng tag quá chung chung: "dep", "hay", "tot", "sach se", "dang di".
-- Không dùng tag dịch vụ phi du lịch: "gui hang", "giao hang", "thu phi".
+- Chỉ trích xuất ĐẶC ĐIỂM NỔI BẬT, trải nghiệm thực tế sát với địa điểm.
+- Tag từ 1 đến 4 từ, KHÔNG dài dòng để tiết kiệm token.
+- Không dùng tag quá chung chung: "tuyệt vời", "ok", "tốt", "hay", "đáng đi".
+- Không dùng tag dịch vụ phi du lịch: "gửi hàng", "giao hàng", "thu phí".
 
 Chỉ trả về JSON, không thêm văn bản khác.
 `.trim();
@@ -375,81 +330,89 @@ ${JSON.stringify(analystResult, null, 2)}
 
 ## Trả về JSON với 3 trường:
 - "category": giữ nguyên hoặc sửa lại
-- "tags": tối đa 10 tags, viết thường tiếng Việt không dấu
-- "supervisorNote": 1-2 câu giải thích quyết định
+- "tags": 5-10 tags ĐIỂM NỔI BẬT (Tiếng Việt có dấu, chữ thường, ngắn gọn).
+- "supervisorNote": Rất ngắn gọn (dưới 10 chữ).
 
 Chỉ trả về JSON hợp lệ, không markdown, không text khác.
 `.trim();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TAG NORMALIZER
-// ─────────────────────────────────────────────────────────────────────────────
+// CHUẨN HÓA TAG (NORMALIZE) - LỌC VÀ CHỈNH SỬA TAG
 
 const TAG_STOPWORDS = new Set([
-  "dep", "hay", "tot", "sach se", "dang di", "noi tieng",
-  "dia diem du lich", "trung tam", "khu vuc cong cong",
+  "hay", "tot", "ok", "tuyet voi", "dang di",
+  "dia diem", "dia diem du lich", "khu vuc cong cong",
 ]);
 
 const TAG_SYNONYMS = {
-  "check-in":            "chup anh check-in",
-  "khach du lich":       "du khach",
-  "du khach nuoc ngoai": "du khach",
-  "quan ao":             "mua sam",
-  "qua luu niem":        "mua qua luu niem",
-  "co phi":              "co ve vao cong",
-  "nghi duong":    "di nghi duong",
-  "an ngon":       "am thuc ngon",
-  "gia re":        "gia binh dan",
-  "view dep":      "co view dep",
-  "sang trong":    "sang trong",
-  "thu gian":      "thu gian",
-  "gia dinh":      "gia dinh",
+  "check-in": "chụp ảnh",
+  "check in": "chụp ảnh",
+  "chup anh check in": "chụp ảnh",
+  "chup anh check-in": "chụp ảnh",
+  "khach du lich": "du khách",
+  "du khach nuoc ngoai": "du khách",
+  "quan ao": "mua sắm",
+  "qua luu niem": "quà lưu niệm",
+  "co phi": "có vé vào cổng",
+  "nghi duong": "đi nghỉ dưỡng",
+  "an ngon": "ẩm thực ngon",
+  "gia re": "giá bình dân",
+  "view dep": "view đẹp",
+  "sang trong": "sang trọng",
+  "thu gian": "thư giãn",
+  "gia dinh": "gia đình",
+};
+
+const FALLBACK_TAGS_MAP = {
+  restaurant: ["ẩm thực", "quán ăn"],
+  cafe: ["cà phê", "thư giãn"],
+  bar_pub: ["giải trí về đêm", "đồ uống"],
+  bakery: ["bánh ngọt", "đồ ăn nhẹ"],
+  hotel: ["lưu trú", "nghỉ dưỡng"],
+  hostel: ["lưu trú", "giá bình dân"],
+  homestay: ["lưu trú", "trải nghiệm địa phương"],
+  attraction: ["tham quan", "check-in"],
+  museum: ["bảo tàng", "tìm hiểu lịch sử"],
+  pagoda_temple: ["tâm linh", "tham quan"],
+  park: ["không gian xanh", "đi dạo"],
+  market: ["mua sắm", "ẩm thực địa phương"],
+  shopping_mall: ["mua sắm", "giải trí"],
+  souvenir_shop: ["quà lưu niệm", "mua sắm"],
+  entertainment: ["giải trí", "về đêm"],
+  spa_wellness: ["thư giãn", "chăm sóc sức khỏe"],
+  sports: ["thể thao", "vận động"],
+  theme_park: ["vui chơi", "gia đình"],
+  beach: ["biển", "nghỉ dưỡng"],
+  viewpoint: ["ngắm cảnh", "check-in"],
+  nature: ["thiên nhiên", "tham quan"],
+  transport_hub: ["di chuyển", "trung chuyển"],
+  event_venue: ["sự kiện", "hội họp"],
 };
 
 function fallbackTagsFromCategory(category) {
-  const map = {
-    restaurant: ["am thuc", "quan an"],
-    cafe: ["ca phe", "thu gian"],
-    bar_pub: ["giai tri ve dem", "do uong"],
-    bakery: ["banh ngot", "do an nhe"],
-    hotel: ["luu tru", "nghi duong"],
-    hostel: ["luu tru", "gia binh dan"],
-    homestay: ["luu tru", "trai nghiem dia phuong"],
-    attraction: ["tham quan", "check-in"],
-    museum: ["bao tang", "tim hieu lich su"],
-    pagoda_temple: ["tam linh", "tham quan"],
-    park: ["khong gian xanh", "di dao"],
-    market: ["mua sam", "am thuc dia phuong"],
-    shopping_mall: ["mua sam", "giai tri"],
-    souvenir_shop: ["qua luu niem", "mua sam"],
-    entertainment: ["giai tri", "ve dem"],
-    spa_wellness: ["thu gian", "cham soc suc khoe"],
-    sports: ["the thao", "van dong"],
-    theme_park: ["vui choi", "gia dinh"],
-    beach: ["bien", "nghi duong"],
-    viewpoint: ["ngam canh", "check-in"],
-    nature: ["thien nhien", "tham quan"],
-    transport_hub: ["di chuyen", "trung chuyen"],
-    event_venue: ["su kien", "hoi hop"],
-  };
-
   const key = String(category || "").replace(/[\/-]/g, "_");
-  return map[key] || ["tham quan", "du lich"];
+  return FALLBACK_TAGS_MAP[key] || ["tham quan", "du lịch"];
 }
 
 function normalizeTag(tag) {
   if (typeof tag !== "string") return "";
-  let t = normalizeText(tag).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
-  if (!t || t.length < 3) return "";
-  t = TAG_SYNONYMS[t] || t;
-  return TAG_STOPWORDS.has(t) ? "" : t;
+  // Giữ lại dấu Tiếng Việt, gạch ngang, khoảng trắng.
+  let raw = tag.toLowerCase().replace(/[^\p{L}\p{N}\-\s]/gu, "").replace(/\s+/g, " ").trim();
+  if (!raw || raw.length < 2) return "";
+
+  // Tạo bản không dấu để map tới Synonym và khước từ Stopwords hiệu quả
+  let unaccented = normalizeText(raw).replace(/[^\w\-\s]/g, "");
+
+  if (TAG_STOPWORDS.has(unaccented)) return "";
+  if (TAG_SYNONYMS[unaccented]) return TAG_SYNONYMS[unaccented];
+
+  return raw;
 }
 
 function normalizeTags(tags) {
   if (!Array.isArray(tags)) return [];
   const seen = new Set();
-  const out  = [];
+  const out = [];
   for (const tag of tags) {
     const t = normalizeTag(tag);
     if (!t || seen.has(t)) continue;
@@ -469,6 +432,7 @@ function validateAIResult(raw, fallbackCategory) {
     result.category = safe;
   }
   result.tags = normalizeTags(result.tags);
+
   if (result.tags.length === 0) {
     const fallbackTags = fallbackTagsFromCategory(result.category);
     result.tags = normalizeTags(fallbackTags);
@@ -477,95 +441,7 @@ function validateAIResult(raw, fallbackCategory) {
   return result;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GỌI GEMINI — với repair tự động nếu JSON lỗi
-// FIX: dùng gemini-2.5-flash
-// FIX: limiter.markDone() sau khi request HOÀN THÀNH (không phải khi bắt đầu)
-// FIX: repair call cũng đi qua limiter để không tạo burst ẩn
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function callGemini(prompt, systemInstruction, label) {
-  if (geminiClients.length === 0) return null;
-  const maxAttempts = Math.max(CONFIG.MAX_RETRIES_PER_KEY, geminiClients.length * 2);
-
-  for (let attempt = 0; attempt <= maxAttempts; attempt++) {
-    await geminiLimiter.throttle();
-
-    const keyInfo = getAvailableClient(geminiClients, keyState.gemini, "gemini");
-    if (!keyInfo) return null;
-    if (keyInfo.waitMs > 0) {
-      console.warn(`    ⏳ Gemini: tất cả key đang cooldown, chờ ${(keyInfo.waitMs / 1000).toFixed(1)}s...`);
-      await sleep(keyInfo.waitMs);
-    }
-
-    const { client: genAI, index: keyIdx } = keyInfo;
-
-    try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        systemInstruction,
-        generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 400 },
-      });
-
-      const res = await withTimeout(model.generateContent(prompt), CONFIG.AI_CALL_TIMEOUT, `Gemini ${label}`);
-      geminiLimiter.markDone();  // FIX: đánh dấu HOÀN THÀNH sau khi response về
-      const raw = res.response.text() || "";
-
-      let parsed;
-      try {
-        parsed = parseModelJSON(raw);
-      } catch (parseErr) {
-        // JSON repair — cũng đi qua limiter để tránh burst
-        console.warn(`    🔧 Gemini trả JSON lỗi, gọi repair...`);
-        await geminiLimiter.throttle();  // FIX: repair request cũng được throttle
-        const repairModel = genAI.getGenerativeModel({
-          model: "gemini-2.5-flash",
-          generationConfig: { temperature: 0, maxOutputTokens: 512 },
-        });
-        const repairRes = await withTimeout(
-          repairModel.generateContent(
-            `Chuyển nội dung sau thành JSON object hợp lệ duy nhất.\nChỉ output JSON thuần.\nNội dung:\n${raw}`
-          ),
-          CONFIG.AI_CALL_TIMEOUT, "Gemini JSON repair"
-        );
-        geminiLimiter.markDone();
-        parsed = parseModelJSON(repairRes.response.text() || "");
-      }
-
-      recordSuccess("gemini");
-      return parsed;
-
-    } catch (err) {
-      geminiLimiter.markDone();  // đảm bảo markDone ngay cả khi lỗi
-      const classified = classifyAPIError(err);
-
-      if (RETRYABLE_ERRORS.has(classified.type) && attempt < maxAttempts) {
-        if (classified.type === "RATE_LIMIT") {
-          setCooldown("gemini", keyIdx);
-          const ms = calcBackoffMs(attempt);
-          console.warn(`    🔄 Gemini key[${keyIdx}] 429 → cooldown | backoff ${(ms/1000).toFixed(1)}s (${attempt+1}/${maxAttempts})`);
-          await sleep(ms);
-        } else {
-          const ms = calcBackoffMs(attempt, 1000, 30000);
-          console.warn(`    🔄 Gemini [${classified.type}] backoff ${(ms/1000).toFixed(1)}s...`);
-          await sleep(ms);
-        }
-        continue;
-      }
-
-      recordFailure("gemini", classified);
-      console.warn(`    ⚠️  Gemini ${label} [${classified.type}]: ${classified.detail}`);
-      if (isAIPersistentlyFailing("gemini"))
-        console.error(`    🔴 Gemini lỗi liên tiếp ${aiErrorTracker.gemini.consecutiveFailures}x`);
-      return null;
-    }
-  }
-  return null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GỌI GROQ — dùng chung cho cả Supervisor và Analyst fallback
-// ─────────────────────────────────────────────────────────────────────────────
+// GỌI API GROQ (Analyst) — Xử lý chính, luân phiên các API Key
 
 async function callGroq(prompt, systemInstruction, label) {
   if (groqClients.length === 0) return null;
@@ -577,8 +453,8 @@ async function callGroq(prompt, systemInstruction, label) {
     const keyInfo = getAvailableClient(groqClients, keyState.groq, "groq");
     if (!keyInfo) return null;
     if (keyInfo.waitMs > 0) {
-      console.warn(`    ⏳ Groq: tất cả key đang cooldown, chờ ${(keyInfo.waitMs / 1000).toFixed(1)}s...`);
-      await sleep(keyInfo.waitMs);
+      console.warn(`    ⚠️ Groq: tất cả key đều bị 429, nhường cho Fallback xử lý...`);
+      return null;
     }
 
     const { client: groq, index: keyIdx } = keyInfo;
@@ -586,10 +462,13 @@ async function callGroq(prompt, systemInstruction, label) {
     try {
       const res = await withTimeout(
         groq.chat.completions.create({
-          model:           "llama-3.3-70b-versatile",
-          messages:        [{ role: "system", content: systemInstruction }, { role: "user", content: prompt }],
-          temperature:     0,
-          max_tokens:      500,
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemInstruction },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0,
+          max_tokens: 500,
           response_format: { type: "json_object" },
         }),
         CONFIG.AI_CALL_TIMEOUT, `Groq ${label}`
@@ -598,6 +477,7 @@ async function callGroq(prompt, systemInstruction, label) {
 
       const parsed = parseModelJSON(res.choices[0]?.message?.content || "{}");
       recordSuccess("groq");
+      console.log(`    🔑 Groq key[${keyIdx}] OK`);
       return parsed;
 
     } catch (err) {
@@ -608,11 +488,11 @@ async function callGroq(prompt, systemInstruction, label) {
         if (classified.type === "RATE_LIMIT") {
           setCooldown("groq", keyIdx);
           const ms = calcBackoffMs(attempt);
-          console.warn(`    🔄 Groq key[${keyIdx}] 429 → cooldown | backoff ${(ms/1000).toFixed(1)}s (${attempt+1}/${maxAttempts})`);
+          console.warn(`    🔄 Groq key[${keyIdx}] 429 → cooldown | backoff ${(ms / 1000).toFixed(1)}s (${attempt + 1}/${maxAttempts})`);
           await sleep(ms);
         } else {
           const ms = calcBackoffMs(attempt, 1000, 30000);
-          console.warn(`    🔄 Groq [${classified.type}] backoff ${(ms/1000).toFixed(1)}s...`);
+          console.warn(`    🔄 Groq [${classified.type}] backoff ${(ms / 1000).toFixed(1)}s...`);
           await sleep(ms);
         }
         continue;
@@ -628,125 +508,253 @@ async function callGroq(prompt, systemInstruction, label) {
   return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GỌI OPENROUTER
-// FIX: mỗi model có timeout riêng (OPENROUTER_PER_MODEL_TIMEOUT = 8s)
-//      thay vì bọc toàn bộ vòng lặp — tránh model đầu treo hết timeout tổng
-// FIX: lỗi 404 "no endpoints" chỉ được skip model, không throw ra ngoài
-// ─────────────────────────────────────────────────────────────────────────────
+// GỌI API POLLINATIONS (Supervisor) — Kiểm định chính, luân phiên Token
+// Mỗi token chạy 1 req/5s. Bỏ nhiều token vào POLLINATIONS_TOKENS để chạy nhanh hơn.
 
-function isModelNotFound(statusCode, body) {
-  if (statusCode !== 404) return false;
-  const b = String(body || "").toLowerCase();
-  return b.includes("no endpoints found") || b.includes("model not found") || b.includes("no provider available");
-}
+const POLLINATIONS_MODELS = [
+  "openai",          // GPT-4o — ổn định
+  "openai-fast",     // GPT-4.1-mini — nhanh hơn
+];
 
-async function callOpenRouterWithRetry(prompt, systemInstruction, label) {
-  if (openRouterKeys.length === 0 || OPENROUTER_MODELS.length === 0) return null;
-  const maxAttempts = Math.max(CONFIG.MAX_RETRIES_PER_KEY, openRouterKeys.length * 2);
+let pollinationsModelCursor = 0;
+
+async function callPollinations(prompt, systemInstruction, label) {
+  if (pollinationsTokens.length === 0) return null;
+  const maxAttempts = Math.max(CONFIG.MAX_RETRIES_PER_KEY, pollinationsTokens.length * 2);
 
   for (let attempt = 0; attempt <= maxAttempts; attempt++) {
-    await openRouterLimiter.throttle();
+    await pollinationsLimiter.throttle();
 
-    const keyInfo = getAvailableClient(openRouterKeys, keyState.openrouter, "openrouter");
-    if (!keyInfo) return null;
-    if (keyInfo.waitMs > 0) {
-      console.warn(`    ⏳ OpenRouter: tất cả key đang cooldown, chờ ${(keyInfo.waitMs / 1000).toFixed(1)}s...`);
-      await sleep(keyInfo.waitMs);
+    // Lấy token khả dụng theo round-robin + cooldown
+    const tokenInfo = getAvailableClient(pollinationsTokens, keyState.pollinations, "pollinations");
+    if (!tokenInfo) return null;
+    if (tokenInfo.waitMs > 0) {
+      console.warn(`    ⚠️ Pollinations: tất cả token đều bị 429, nhường cho Fallback xử lý...`);
+      return null;
     }
 
-    const apiKey = keyInfo.client;
-    const keyIdx = keyInfo.index;
+    const { client: token, index: tokenIdx } = tokenInfo;
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
 
     const modelsToTry = [
-      ...OPENROUTER_MODELS.slice(openRouterModelCursor),
-      ...OPENROUTER_MODELS.slice(0, openRouterModelCursor),
+      ...POLLINATIONS_MODELS.slice(pollinationsModelCursor),
+      ...POLLINATIONS_MODELS.slice(0, pollinationsModelCursor),
     ];
 
     let parsedResult = null;
-    let outerError   = null;
 
     for (const modelName of modelsToTry) {
       try {
         const res = await withTimeout(
-          fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method:  "POST",
-            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          fetch("https://text.pollinations.ai/v1/chat/completions", {
+            method: "POST",
+            headers,
             body: JSON.stringify({
-              model:           modelName,
-              messages:        [{ role: "system", content: systemInstruction }, { role: "user", content: prompt }],
-              temperature:     0,
-              max_tokens:      500,
+              model: modelName,
+              messages: [
+                { role: "system", content: systemInstruction },
+                { role: "user", content: prompt },
+              ],
+              temperature: 0,
+              max_tokens: 500,
               response_format: { type: "json_object" },
+              seed: 42,
             }),
           }),
-          CONFIG.OPENROUTER_PER_MODEL_TIMEOUT,
-          `OpenRouter ${modelName}`
+          CONFIG.AI_CALL_TIMEOUT, `Pollinations ${modelName}`
         );
+
+        pollinationsLimiter.markDone();
 
         if (!res.ok) {
           const body = await res.text();
-          if (isModelNotFound(res.status, body)) {
-            console.warn(`    ↪ OpenRouter "${modelName}" không có endpoint, thử tiếp...`);
-            continue;
+          if (res.status === 429) {
+            setCooldown("pollinations", tokenIdx);
+            console.warn(`    ↪ Pollinations token[${tokenIdx}] 429 → cooldown`);
+            break; // thử token khác ở vòng attempt tiếp
           }
-          outerError = new Error(`OpenRouter HTTP ${res.status}: ${body.slice(0, 200)}`);
-          break;
+          console.warn(`    ↪ Pollinations "${modelName}" HTTP ${res.status}: ${body.slice(0, 60)}, thử model tiếp...`);
+          continue;
         }
 
         const data = await res.json();
-        parsedResult = parseModelJSON(data?.choices?.[0]?.message?.content || "{}");
-        const idx = OPENROUTER_MODELS.indexOf(modelName);
-        if (idx >= 0) openRouterModelCursor = (idx + 1) % OPENROUTER_MODELS.length;
+        const content = data?.choices?.[0]?.message?.content || "{}";
+        parsedResult = parseModelJSON(content);
+
+        const idx = POLLINATIONS_MODELS.indexOf(modelName);
+        if (idx >= 0) pollinationsModelCursor = (idx + 1) % POLLINATIONS_MODELS.length;
         break;
 
       } catch (modelErr) {
+        pollinationsLimiter.markDone();
         const c = classifyAPIError(modelErr);
         if (c.type === "NETWORK" || c.type === "SERVER" || c.type === "PARSE") {
-          console.warn(`    ↪ OpenRouter "${modelName}" [${c.type}], thử model tiếp...`);
+          console.warn(`    ↪ Pollinations "${modelName}" [${c.type}], thử model tiếp...`);
           continue;
         }
-        outerError = modelErr;
         break;
       }
     }
 
-    openRouterLimiter.markDone();
-
     if (parsedResult) {
-      recordSuccess("openrouter");
+      recordSuccess("pollinations");
+      console.log(`    🌸 Pollinations token[${tokenIdx}] OK`);
       return parsedResult;
     }
 
-    const err = outerError || new Error("OpenRouter: tất cả model đều không khả dụng.");
-    const classified = classifyAPIError(err);
-
-    if (RETRYABLE_ERRORS.has(classified.type) && attempt < maxAttempts) {
-      if (classified.type === "RATE_LIMIT") {
-        setCooldown("openrouter", keyIdx);
-        const ms = calcBackoffMs(attempt);
-        console.warn(`    🔄 OpenRouter key[${keyIdx}] 429 → cooldown | backoff ${(ms/1000).toFixed(1)}s (${attempt+1}/${maxAttempts})`);
-        await sleep(ms);
-      } else {
-        const ms = calcBackoffMs(attempt, 1000, 30000);
-        console.warn(`    🔄 OpenRouter [${classified.type}] backoff ${(ms/1000).toFixed(1)}s...`);
-        await sleep(ms);
-      }
-      continue;
+    if (attempt < maxAttempts) {
+      const ms = calcBackoffMs(attempt, 1500, 30000);
+      console.warn(`    🔄 Pollinations retry backoff ${(ms / 1000).toFixed(1)}s... (${attempt + 1}/${maxAttempts})`);
+      await sleep(ms);
     }
-
-    recordFailure("openrouter", classified);
-    console.warn(`    ⚠️  OpenRouter ${label} [${classified.type}]: ${classified.detail}`);
-    if (isAIPersistentlyFailing("openrouter"))
-      console.error(`    🔴 OpenRouter lỗi liên tiếp ${aiErrorTracker.openrouter.consecutiveFailures}x`);
-    return null;
   }
+
+  recordFailure("pollinations", { type: "UNKNOWN", detail: "Tất cả token/model thất bại" });
+  console.warn(`    ⚠️  Pollinations ${label}: tất cả token đều lỗi`);
+  if (isAIPersistentlyFailing("pollinations"))
+    console.error(`    🔴 Pollinations lỗi liên tiếp ${aiErrorTracker.pollinations.consecutiveFailures}x`);
   return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SCRAPING — Google Maps
-// ─────────────────────────────────────────────────────────────────────────────
+// GỌI API G4F.DEV — Fallback dự phòng khi Groq/Pollinations sập
+
+// G4F hỗ trợ nhiều key luân phiên (mỗi key là userId tự đặt)
+const g4fKeys = loadKeys(externalKeys.G4F_API_KEYS || [], "G4F_API_KEYS", "G4F_API_KEY");
+// Nếu không có key → dùng anonymous
+if (g4fKeys.length === 0) g4fKeys.push("");
+
+const keyStateG4f = g4fKeys.map(() => ({ cooldownUntil: 0 }));
+let g4fKeyCounter = 0;
+
+const G4F_MODELS = [
+  "gpt-4o",              // GPT-4o — JSON tốt nhất
+  "llama-3.3-70b",       // Llama 3.3 70B — mạnh, ổn định
+  "deepseek-v3",         // DeepSeek V3 — JSON ổn định
+  "mistral-large",       // Mistral Large — cân bằng
+  "gpt-4o-mini",         // GPT-4o-mini — nhanh hơn
+];
+
+let g4fModelCursor = 0;
+
+function getAvailableG4fKey() {
+  const now = Date.now();
+  const available = g4fKeys
+    .map((k, i) => ({ k, i }))
+    .filter(({ i }) => keyStateG4f[i].cooldownUntil <= now);
+
+  if (available.length > 0) {
+    const pick = available[g4fKeyCounter % available.length];
+    g4fKeyCounter++;
+    return { key: pick.k, index: pick.i, waitMs: 0 };
+  }
+  const soonestIdx = keyStateG4f.reduce(
+    (best, s, i) => (s.cooldownUntil < keyStateG4f[best].cooldownUntil ? i : best), 0
+  );
+  return { key: g4fKeys[soonestIdx], index: soonestIdx, waitMs: keyStateG4f[soonestIdx].cooldownUntil - now };
+}
+
+async function callG4F(prompt, systemInstruction, label) {
+  const maxAttempts = Math.max(CONFIG.MAX_RETRIES_PER_KEY, g4fKeys.length * 2);
+
+  for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+    await g4fLimiter.throttle();
+
+    const keyInfo = getAvailableG4fKey();
+    if (keyInfo.waitMs > 0) {
+      console.warn(`    ⚠️ G4F: tất cả key đều bị 429, hệ thống không thể Fallback thêm!`);
+      return null;
+    }
+
+    const { key, index: keyIdx } = keyInfo;
+    const headers = { "Content-Type": "application/json" };
+    if (key) headers["Authorization"] = `Bearer ${key}`;
+
+    const modelsToTry = [
+      ...G4F_MODELS.slice(g4fModelCursor),
+      ...G4F_MODELS.slice(0, g4fModelCursor),
+    ];
+
+    let parsedResult = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const res = await withTimeout(
+          fetch("https://api.g4f.dev/v1/chat/completions", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model: modelName,
+              messages: [
+                { role: "system", content: systemInstruction },
+                { role: "user", content: prompt },
+              ],
+              temperature: 0,
+              max_tokens: 500,
+              response_format: { type: "json_object" },
+            }),
+          }),
+          CONFIG.AI_CALL_TIMEOUT, `G4F ${modelName}`
+        );
+
+        g4fLimiter.markDone();
+
+        if (!res.ok) {
+          const body = await res.text();
+          if (res.status === 429) {
+            keyStateG4f[keyIdx].cooldownUntil = Date.now() + CONFIG.KEY_COOLDOWN_MS;
+            console.warn(`    ↪ G4F key[${keyIdx}] 429 → cooldown`);
+            break;
+          }
+          if (res.status === 404 || /not found|no endpoint/i.test(body)) {
+            console.warn(`    ↪ G4F "${modelName}" không có endpoint, thử tiếp...`);
+            continue;
+          }
+          console.warn(`    ↪ G4F "${modelName}" HTTP ${res.status}: ${body.slice(0, 60)}, thử model tiếp...`);
+          continue;
+        }
+
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content || "{}";
+        parsedResult = parseModelJSON(content);
+
+        const idx = G4F_MODELS.indexOf(modelName);
+        if (idx >= 0) g4fModelCursor = (idx + 1) % G4F_MODELS.length;
+        break;
+
+      } catch (modelErr) {
+        g4fLimiter.markDone();
+        const c = classifyAPIError(modelErr);
+        if (c.type === "NETWORK" || c.type === "SERVER" || c.type === "PARSE") {
+          console.warn(`    ↪ G4F "${modelName}" [${c.type}], thử model tiếp...`);
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (parsedResult) {
+      recordSuccess("g4f");
+      console.log(`    🟢 G4F key[${keyIdx}] "${G4F_MODELS[(g4fModelCursor - 1 + G4F_MODELS.length) % G4F_MODELS.length]}" OK`);
+      return parsedResult;
+    }
+
+    if (attempt < maxAttempts) {
+      const ms = calcBackoffMs(attempt, 1500, 30000);
+      console.warn(`    🔄 G4F retry backoff ${(ms / 1000).toFixed(1)}s... (${attempt + 1}/${maxAttempts})`);
+      await sleep(ms);
+    }
+  }
+
+  recordFailure("g4f", { type: "UNKNOWN", detail: "Tất cả key/model thất bại" });
+  console.warn(`    ⚠️  G4F ${label}: tất cả đều lỗi`);
+  if (isAIPersistentlyFailing("g4f"))
+    console.error(`    🔴 G4F lỗi liên tiếp ${aiErrorTracker.g4f.consecutiveFailures}x`);
+  return null;
+}
+
+
+// CÀO DỮ LIỆU (SCRAPING) BẰNG SELENIUM — Nguồn: Google Maps
 
 async function buildDriver() {
   const options = new chrome.Options();
@@ -804,7 +812,6 @@ async function hasAnyReviews(driver) {
       for (const t of tabs) {
         const text = (t.innerText || t.getAttribute('aria-label') || "").toLowerCase();
         if (text.includes("đánh giá") || text.includes("review")) {
-          if (text.includes("(0)") || /^0 đánh giá/.test(text)) return false;
           return true;
         }
       }
@@ -920,29 +927,28 @@ async function scrapeReviews(driver, place) {
   return { status: SCRAPE_STATUS.SUCCESS, reviews, placeType };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// XÂY DỰNG CONTEXT CHO AI
-// ─────────────────────────────────────────────────────────────────────────────
+// TẠO DỮ LIỆU (CONTEXT) BÌNH LUẬN ĐỂ GỬI CHO AI
+
+const CLEAR_TYPE_HINTS = [
+  "restaurant", "nha hang", "quan an", "food court",
+  "cafe", "coffee", "tra sua",
+  "hotel", "resort", "hostel", "homestay",
+  "museum", "bao tang",
+  "chua", "den", "nha tho", "thanh duong",
+  "park", "cong vien",
+  "market", "cho",
+  "shopping mall", "trung tam thuong mai",
+  "spa", "massage",
+  "beach", "bai bien",
+  "viewpoint", "diem ngam canh",
+  "theme park", "cong vien nuoc",
+  "transport", "ga", "ben xe", "ben tau",
+];
 
 function getDynamicReviewLimit(placeType) {
   const n = normalizeText(placeType);
   if (!n) return CONFIG.AI_CONTEXT_REVIEW_LIMIT_AMBIGUOUS;
-  const clearHints = [
-    "restaurant","nha hang","quan an","food court",
-    "cafe","coffee","tra sua",
-    "hotel","resort","hostel","homestay",
-    "museum","bao tang",
-    "chua","den","nha tho","thanh duong",
-    "park","cong vien",
-    "market","cho",
-    "shopping mall","trung tam thuong mai",
-    "spa","massage",
-    "beach","bai bien",
-    "viewpoint","diem ngam canh",
-    "theme park","cong vien nuoc",
-    "transport","ga","ben xe","ben tau",
-  ];
-  return clearHints.some(h => n.includes(h))
+  return CLEAR_TYPE_HINTS.some(h => n.includes(h))
     ? CONFIG.AI_CONTEXT_REVIEW_LIMIT_CLEAR_TYPE
     : CONFIG.AI_CONTEXT_REVIEW_LIMIT;
 }
@@ -955,7 +961,7 @@ function buildReviewContext(place, scrapeResult) {
 
   switch (status) {
     case SCRAPE_STATUS.SUCCESS: {
-      const limit    = getDynamicReviewLimit(placeType);
+      const limit = getDynamicReviewLimit(placeType);
       const selected = reviews.slice(0, limit);
       return {
         confidence: "high",
@@ -994,58 +1000,56 @@ function buildReviewContext(place, scrapeResult) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PIPELINE AI: Analyst → Supervisor
-// ─────────────────────────────────────────────────────────────────────────────
+// QUY TRÌNH KẾT NỐI AI: Phân tích (Analyst) → Kiểm duyệt (Supervisor)
+// Analyst:    Groq (luân phiên Key)   → Dự phòng: G4F.dev
+// Supervisor: Pollinations (luân phiên Token) → Dự phòng: G4F.dev
 
 function buildDualFailureMessage() {
   const fmt = (name) => {
     const t = aiErrorTracker[name];
-    return t.lastError
+    return t?.lastError
       ? `${name}: [${t.lastError.type}] ${t.lastError.detail} (liên tiếp: ${t.consecutiveFailures}x)`
-      : `${name}: không có API key`;
+      : `${name}: không có key hoặc chưa cấu hình`;
   };
   return [
     "🛑 TẤT CẢ AI ĐỀU THẤT BẠI — DỪNG CHƯƠNG TRÌNH!",
     "─".repeat(50),
-    `  • ${fmt("gemini")}`,
-    `  • ${fmt("groq")}`,
-    `  • ${fmt("openrouter")}`,
+    `  • Analyst   : ${fmt("groq")} → ${fmt("g4f")}`,
+    `  • Supervisor: ${fmt("pollinations")} → ${fmt("g4f")}`,
     "─".repeat(50),
-    "Gợi ý: kiểm tra mạng, API key, chờ rate limit phục hồi rồi chạy lại.",
+    "Gợi ý: kiểm tra mạng, Groq key, Pollinations token rồi chạy lại.",
   ].join("\n");
 }
 
 async function analyzeWithAI(place, scrapeResult) {
   const { confidence, contextBlock } = buildReviewContext(place, scrapeResult);
-  const analystPrompt    = buildAnalystPrompt(place, contextBlock);
-  const hasGroq          = groqClients.length > 0;
-  const hasOpenRouter    = openRouterKeys.length > 0;
+  const analystPrompt = buildAnalystPrompt(place, contextBlock);
 
-  // ── BƯỚC 1: Analyst (Gemini ưu tiên, fallback OpenRouter)
-  let analystSource = "gemini";
-  let analystRaw = await callGemini(analystPrompt, ANALYST_SYSTEM, "Analyst");
+  // ── BƯỚC 1: Analyst — Groq (chính) → G4F (fallback)
+  let analystSource = "groq";
+  let analystRaw = await callGroq(analystPrompt, ANALYST_SYSTEM, "Analyst");
 
-  if (!analystRaw && hasOpenRouter) {
-    console.warn("  🔁 Gemini lỗi → OpenRouter Analyst...");
-    analystRaw = await callOpenRouterWithRetry(analystPrompt, ANALYST_SYSTEM, "Analyst");
-    if (analystRaw) analystSource = "openrouter";
+  if (!analystRaw) {
+    console.warn("  🔁 Groq lỗi → G4F Analyst...");
+    analystRaw = await callG4F(analystPrompt, ANALYST_SYSTEM, "Analyst");
+    if (analystRaw) analystSource = "g4f";
   }
 
   const analystResult = analystRaw ? validateAIResult(analystRaw, place.category) : null;
 
-  // ── BƯỚC 2: Supervisor (Groq ưu tiên, fallback OpenRouter)
+  // ── BƯỚC 2: Supervisor — Pollinations (chính) → G4F (fallback)
   let finalResult, aiSource, supervisorNote = "";
 
   if (analystResult) {
     const supervisorPrompt = buildSupervisorPrompt(place, contextBlock, analystResult);
-    let supervisorRaw      = hasGroq ? await callGroq(supervisorPrompt, SUPERVISOR_SYSTEM, "Supervisor") : null;
-    let supervisorSource   = "groq";
 
-    if (!supervisorRaw && hasOpenRouter) {
-      console.warn("  🔁 Groq lỗi → OpenRouter Supervisor...");
-      supervisorRaw = await callOpenRouterWithRetry(supervisorPrompt, SUPERVISOR_SYSTEM, "Supervisor");
-      if (supervisorRaw) supervisorSource = "openrouter";
+    let supervisorRaw = await callPollinations(supervisorPrompt, SUPERVISOR_SYSTEM, "Supervisor");
+    let supervisorSource = "pollinations";
+
+    if (!supervisorRaw) {
+      console.warn("  🔁 Pollinations lỗi → G4F Supervisor...");
+      supervisorRaw = await callG4F(supervisorPrompt, SUPERVISOR_SYSTEM, "Supervisor");
+      if (supervisorRaw) supervisorSource = "g4f";
     }
 
     const supervisorResult = supervisorRaw ? validateAIResult(supervisorRaw, analystResult.category) : null;
@@ -1056,41 +1060,30 @@ async function analyzeWithAI(place, scrapeResult) {
         supervisorResult.category !== analystResult.category ||
         JSON.stringify([...supervisorResult.tags].sort()) !== JSON.stringify([...analystResult.tags].sort());
 
-      aiSource    = changed
-        ? (supervisorSource === "groq" ? "groq-corrected"    : "openrouter-corrected")
-        : (supervisorSource === "groq" ? "dual-confirmed"    : "openrouter-confirmed");
+      aiSource = changed
+        ? `${analystSource}+${supervisorSource}-corrected`
+        : `${analystSource}+${supervisorSource}-confirmed`;
       finalResult = { category: supervisorResult.category, tags: supervisorResult.tags };
+
     } else {
-      // Supervisor lỗi → dùng kết quả Analyst
+      // Supervisor lỗi hoàn toàn → dùng kết quả Analyst
       console.warn("  ⚠️  Supervisor lỗi, dùng kết quả Analyst");
       finalResult = analystResult;
-      aiSource    = analystSource === "gemini" ? "gemini-only" : "openrouter-analyst-only";
+      aiSource = `${analystSource}-only`;
     }
 
   } else {
-    // Analyst lỗi → thử Groq tự phân tích
-    if (hasGroq) {
-      console.log("  🔎 Gemini + OpenRouter lỗi, thử Groq Analyst...");
-      const groqOnlyRaw = await callGroq(analystPrompt, ANALYST_SYSTEM, "Analyst-fallback");
-      const groqOnly    = groqOnlyRaw ? validateAIResult(groqOnlyRaw, place.category) : null;
-      if (groqOnly) {
-        finalResult = groqOnly;
-        aiSource    = "groq-only";
-      } else {
-        throw new Error(buildDualFailureMessage());
-      }
-    } else {
-      throw new Error(buildDualFailureMessage());
-    }
+    // Analyst lỗi hoàn toàn → dừng
+    throw new Error(buildDualFailureMessage());
   }
 
   console.log(`  ✅ ${finalResult.category} [${aiSource}] tags=${finalResult.tags.length}`);
   return { ...finalResult, confidence, aiSource, supervisorNote };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE I/O
-// ─────────────────────────────────────────────────────────────────────────────
+// QUẢN LÝ DỮ LIỆU VÀ GHI FILE (FILE I/O)
+
+let currentEnrichedData = [];
 
 function readInputData(filePath) {
   if (!fs.existsSync(filePath)) throw new Error(`Không tìm thấy file: ${filePath}`);
@@ -1109,52 +1102,53 @@ function makePlaceKey(place) {
 }
 
 function saveEnrichedPlace(filePath, enrichedPlace) {
-  let data = [];
-  if (fs.existsSync(filePath)) {
-    try { data = JSON.parse(fs.readFileSync(filePath, "utf-8")); } catch { data = []; }
-  }
   const key = makePlaceKey(enrichedPlace);
-  const idx = data.findIndex(p => makePlaceKey(p) === key);
-  if (idx !== -1) data[idx] = enrichedPlace; else data.push(enrichedPlace);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  const idx = currentEnrichedData.findIndex(p => makePlaceKey(p) === key);
+  if (idx !== -1) currentEnrichedData[idx] = enrichedPlace; else currentEnrichedData.push(enrichedPlace);
+  fs.writeFileSync(filePath, JSON.stringify(currentEnrichedData, null, 2), "utf-8");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────────────────────
+// VÒNG LẶP CHẠY CHÍNH LÕI (MAIN LOOP)
 
 async function main() {
   console.log("=".repeat(60));
   console.log("  🗺️  DATA ENRICHMENT PIPELINE");
-  console.log("  🔄 Mode: Gemini Analyst → Groq Supervisor");
+  console.log("  🔄 Mode: Groq Analyst → Pollinations Supervisor");
+  console.log("  📋 Fallback: G4F.dev (cho cả Analyst lẫn Supervisor)");
   console.log("=".repeat(60));
 
-  if (!geminiClients.length && !groqClients.length && !openRouterKeys.length)
-    throw new Error("Thiếu API key! Cấu hình api_keys.json hoặc biến môi trường.");
+  if (!groqClients.length) {
+    throw new Error(
+      "Thiếu Groq API key!\n" +
+      "Tạo api_keys.json với nội dung:\n" +
+      '{ "GROQ_API_KEYS": ["gsk_..."], "POLLINATIONS_TOKENS": ["pk_..."], "G4F_API_KEYS": ["uid_..."] }\n' +
+      "Lấy Groq key tại: https://console.groq.com\n" +
+      "Lấy Pollinations token tại: https://auth.pollinations.ai\n" +
+      "Lấy G4F API key tại: https://g4f.dev/api_key.html"
+    );
+  }
 
-  const aiStatus = [
-    geminiClients.length  ? `✅ Gemini (${geminiClients.length} keys)`       : "❌ Gemini",
-    groqClients.length    ? `✅ Groq (${groqClients.length} keys)`           : "❌ Groq",
-    openRouterKeys.length ? `✅ OpenRouter (${openRouterKeys.length} keys)` : "❌ OpenRouter",
-  ];
-  console.log(`🤖 AI: ${aiStatus.join(" | ")}`);
-  console.log(
-    `🚦 RPM: Gemini ${geminiClients.length * CONFIG.GEMINI_RPM_PER_KEY} | ` +
-    `Groq ${groqClients.length * CONFIG.GROQ_RPM_PER_KEY} | ` +
-    `OpenRouter ${openRouterKeys.length * CONFIG.OPENROUTER_RPM_PER_KEY}`
-  );
-  console.log(`🔑 Cooldown: ${CONFIG.KEY_COOLDOWN_MS / 60000} phút/key khi bị 429`);
-  console.log(`⚙️  Gemini model: gemini-2.5-flash | OpenRouter per-model timeout: ${CONFIG.OPENROUTER_PER_MODEL_TIMEOUT / 1000}s`);
+  const polTokenCount = pollinationsTokens.filter(t => t).length;
+  console.log(`🤖 AI Pipeline:`);
+  console.log(`   Analyst   : ✅ Groq (${groqClients.length} keys luân phiên) → 🟢 G4F.dev (fallback)`);
+  console.log(`   Supervisor: 🌸 Pollinations (${polTokenCount} token${polTokenCount !== 1 ? "s" : ""} luân phiên) → 🟢 G4F.dev (fallback)`);
+  console.log(`🚦 RPM: Groq ${groqClients.length * CONFIG.GROQ_RPM_PER_KEY} | Pollinations ${Math.max(1, polTokenCount) * CONFIG.POLLINATIONS_RPM_PER_TOKEN} | G4F ${CONFIG.G4F_RPM}`);
+  console.log(`🔑 Groq Cooldown: ${CONFIG.KEY_COOLDOWN_MS / 60000} phút/key khi bị 429`);
+  console.log(`🔑 Pollinations token: ${polTokenCount > 0 ? `✅ ${polTokenCount} token` : "⚠️  anonymous (rate limit thấp)"}`);
+  console.log(`🔑 G4F keys: ${g4fKeys.filter(k => k).length > 0 ? `✅ ${g4fKeys.filter(k => k).length} key` : "ℹ️  anonymous (không cần key)"}`);
+  console.log(`⚙️  Groq model: llama-3.3-70b-versatile`);
+  console.log(`⚙️  Pollinations models: ${POLLINATIONS_MODELS.join(", ")}`);
+  console.log(`⚙️  G4F models: ${G4F_MODELS.join(", ")}`);
 
   const places = readInputData(CONFIG.INPUT_FILE);
 
   let alreadyDone = new Set();
   if (fs.existsSync(CONFIG.OUTPUT_FILE)) {
     try {
-      const existing = JSON.parse(fs.readFileSync(CONFIG.OUTPUT_FILE, "utf-8"));
-      existing.forEach(p => alreadyDone.add(makePlaceKey(p)));
+      currentEnrichedData = JSON.parse(fs.readFileSync(CONFIG.OUTPUT_FILE, "utf-8"));
+      currentEnrichedData.forEach(p => alreadyDone.add(makePlaceKey(p)));
       console.log(`♻️  ${alreadyDone.size} địa điểm đã xử lý, bỏ qua.`);
-    } catch { alreadyDone = new Set(); }
+    } catch { alreadyDone = new Set(); currentEnrichedData = []; }
   }
 
   let driver = null;
@@ -1162,13 +1156,13 @@ async function main() {
     driver = await buildDriver();
 
     for (let i = 0; i < places.length; i++) {
-      const place    = places[i];
+      const place = places[i];
       const placeKey = makePlaceKey(place);
 
       if (alreadyDone.has(placeKey)) continue;
       console.log(`\n📍 [${i + 1}/${places.length}] "${place.name}"`);
 
-      // Scraping
+      // Bước 1: Cào dữ liệu
       let scrapeResult = { status: SCRAPE_STATUS.ERROR, reviews: [], placeType: "" };
       try {
         scrapeResult = await scrapeReviews(driver, place);
@@ -1177,26 +1171,26 @@ async function main() {
       }
 
       const statusLabels = {
-        [SCRAPE_STATUS.SUCCESS]:         `${scrapeResult.reviews.length} reviews`,
-        [SCRAPE_STATUS.NO_REVIEWS]:      "no reviews",
+        [SCRAPE_STATUS.SUCCESS]: `${scrapeResult.reviews.length} reviews`,
+        [SCRAPE_STATUS.NO_REVIEWS]: "no reviews",
         [SCRAPE_STATUS.PLACE_NOT_FOUND]: "not found",
-        [SCRAPE_STATUS.ERROR]:           "scrape error",
+        [SCRAPE_STATUS.ERROR]: "scrape error",
       };
       console.log(`  🌐 ${statusLabels[scrapeResult.status]}${scrapeResult.placeType ? ` | ${scrapeResult.placeType}` : ""}`);
 
       await sleep(1000);
 
-      // Phân tích AI
+      // Bước 2: AI tự động phân tích & gắn thẻ
       try {
         const aiResult = await analyzeWithAI(place, scrapeResult);
         const enrichedPlace = {
           ...place,
           category: aiResult.category,
-          tags:     aiResult.tags,
+          tags: aiResult.tags,
           _enrichMeta: {
             scrapeStatus: scrapeResult.status,
-            aiSource:     aiResult.aiSource,
-            enrichedAt:   new Date().toISOString(),
+            aiSource: aiResult.aiSource,
+            enrichedAt: new Date().toISOString(),
           },
         };
         saveEnrichedPlace(CONFIG.OUTPUT_FILE, enrichedPlace);
