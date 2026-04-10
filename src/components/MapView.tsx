@@ -178,8 +178,8 @@ export default function MapView({ userLocation, radius, result }: Props) {
   }, [mapReady, userLocation, result]);
 
   return (
-    <div style={{ flex: 1, position: "relative" }}>
-      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+    <div className="w-full h-full relative z-0">
+      <div ref={containerRef} className="w-full h-full" />
     </div>
   );
 }
