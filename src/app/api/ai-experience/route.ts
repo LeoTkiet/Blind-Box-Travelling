@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWeather } from "@/lib/weather";
-import { generateAIContent } from "@/lib/gemini";
+import { generateAIContent } from "@/lib/groq";
 import type {
   Destination,
   BlindBoxExperiencePayload,
@@ -39,8 +39,6 @@ export async function POST(req: NextRequest) {
       };
       return NextResponse.json(err, { status: 502 });
     }
-
-    // 3. Gọi Gemini sinh câu đố + gợi ý
     let aiContent;
     try {
       aiContent = await generateAIContent(destination, weather);
