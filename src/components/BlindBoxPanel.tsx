@@ -56,9 +56,57 @@ export default function BlindBoxPanel({
   // State to manage name visibility (Unlock)
   const [isRevealed, setIsRevealed] = useState(false);
 
+  // DRAG SHEET LOGIC
+  const [sheetHeight, setSheetHeight] = useState<number>(30); // 30vh
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  const dragStartRef = useRef<{ y: number, h: number } | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const onTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
+    if (!isMobile) return;
+    const y = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    dragStartRef.current = { y, h: sheetHeight };
+    setIsDragging(true);
+  };
+
+  const onTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
+    if (!dragStartRef.current || !isDragging) return;
+    const y = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const deltaY = dragStartRef.current.y - y;
+    const deltaVh = (deltaY / window.innerHeight) * 100;
+    
+    let newHeight = dragStartRef.current.h + deltaVh;
+    if (newHeight < 15) newHeight = 15;
+    if (newHeight > 90) newHeight = 90;
+    
+    setSheetHeight(newHeight);
+  };
+
+  const onTouchEnd = () => {
+    if (!dragStartRef.current) return;
+    dragStartRef.current = null;
+    setIsDragging(false);
+    // Snap logic
+    if (sheetHeight > 55) {
+      setSheetHeight(85);
+    } else {
+      setSheetHeight(30);
+    }
+  };
+
   // Close the box when a new result arrives
   useEffect(() => {
-    if (result) setIsRevealed(false);
+    if (result) {
+      setIsRevealed(false);
+      setSheetHeight(30); // Snap down to let user see the map!
+    }
   }, [result]);
 
   useEffect(() => {
@@ -100,11 +148,31 @@ export default function BlindBoxPanel({
   };
 
   return (
-    <aside className={inter.className} style={{
-      width: "360px", flexShrink: 0, borderRight: "1px solid #e5e7eb",
-      background: "#fff", display: "flex", flexDirection: "column", overflow: "hidden",
-    }}>
-      <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem" }}>
+    <aside 
+      className={`${inter.className} w-full md:w-[360px] flex-shrink-0 md:border-r border-[#e5e7eb] bg-white flex flex-col overflow-hidden z-10 absolute md:relative bottom-0 left-0 md:bottom-auto md:left-auto rounded-t-3xl md:rounded-none shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:shadow-none`}
+      style={isMobile ? { 
+        height: `${sheetHeight}%`, 
+        transition: isDragging ? 'none' : 'height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' 
+      } : undefined}
+    >
+      {/* Drag Handle for Mobile */}
+      <div 
+        className="w-full flex justify-center items-center pt-3 pb-2 cursor-grab active:cursor-grabbing flex-shrink-0 touch-none md:hidden bg-white z-20 sticky top-0"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onMouseDown={onTouchStart}
+        onMouseMove={onTouchMove}
+        onMouseUp={onTouchEnd}
+        onMouseLeave={onTouchEnd}
+      >
+        <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
+      </div>
+
+      <div 
+        className={`flex-1 overflow-y-auto ${isMobile ? "px-5 pt-1 pb-10" : "p-5"}`}
+        style={isMobile ? { paddingBottom: "calc(env(safe-area-inset-bottom, 24px) + 24px)" } : undefined}
+      >
         <h2 style={{ margin: "0 0 1.25rem", fontSize: "1.2rem", fontWeight: 800, color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
           <span>🎲</span> Du lịch hộp mù
         </h2>

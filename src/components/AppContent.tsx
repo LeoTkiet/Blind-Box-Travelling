@@ -60,7 +60,7 @@ export default function AppContent() {
   }, [userLocation, radius, category]);
 
   return (
-    <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+    <div className="flex flex-col md:flex-row flex-1 w-full overflow-hidden relative bg-[#f1f5f9]">
       <BlindBoxPanel
         userLocation={userLocation} setUserLocation={setUserLocation}
         radius={radius} setRadius={setRadius}
@@ -68,7 +68,11 @@ export default function AppContent() {
         onGenerate={handleGenerate}
         result={result} isGenerating={isGenerating} error={error}
       />
-      <MapView userLocation={userLocation} radius={radius} result={result} />
+      {/* MapView container */}
+      <div className="absolute inset-0 md:relative md:flex-1 md:order-2 z-0">
+        <MapView userLocation={userLocation} radius={radius} result={result} />
+      </div>
+
       {/* onLocationUpdate syncs ChatBox's geolocation button back to AppContent state,
           so BlindBoxPanel and MapView automatically reflect the new position too. */}
       <ChatBox

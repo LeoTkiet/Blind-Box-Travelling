@@ -10,6 +10,8 @@ import {
     RefreshCw,
     Navigation,
     Bot,
+    X,
+    MessageSquare,
 } from "lucide-react";
 import type { UserLocation, LocationResult } from "./AppContent";
 import type { AIGeneratedContent } from "@/types";
@@ -172,6 +174,7 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
     const [error, setError] = useState<string | null>(null);
     const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
     const [suggestedPlaces, setSuggestedPlaces] = useState<any[]>([]);
+    const [isMobileOpen, setIsMobileOpen] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -351,134 +354,163 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
     };
 
     return (
-        <aside className="w-[360px] sm:w-[400px] flex-shrink-0 h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.05)] flex flex-col z-20 border-l border-gray-100 overflow-hidden relative">
-            {/* Thanh Tiêu đề (Header) */}
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-white">
-                <div className="relative flex-shrink-0">
-                    <div className="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center">
-                        <Bot size={19} className="text-white" />
-                    </div>
-                    <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${userLocation ? "bg-green-500" : "bg-amber-500"}`} />
+        <>
+            {/* Mobile FAB */}
+            <button
+                className={`md:hidden fixed right-6 z-[5] w-14 h-14 bg-gray-900 text-white rounded-full flex items-center justify-center shadow-xl transition-transform active:scale-95 ${isMobileOpen ? 'hidden' : 'flex'}`}
+                style={{ bottom: "calc(30vh + 2px)" }}
+                onClick={() => setIsMobileOpen(true)}
+            >
+                <div className="relative">
+                    <MessageSquare size={24} />
+                    {userLocation && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-gray-900" />}
                 </div>
+            </button>
 
-                <div className="flex-1 min-w-0">
-                    <p className="text-[15px] font-bold text-gray-900 leading-tight tracking-tight">Travel Assistant</p>
-                    {locationInfo ? (
-                        <p className="text-[12px] text-gray-500 truncate mt-0.5">{locationInfo.address}</p>
-                    ) : (
-                        <p className="text-[12px] text-amber-600 font-medium mt-0.5">
-                            {isFetchingLocation ? "Đang tải vị trí…" : userLocation ? "Đang tải vị trí…" : "Chưa có vị trí"}
-                        </p>
-                    )}
-                </div>
-
-                {locationInfo && (
-                    <button
-                        onClick={handleRefreshLocation}
-                        disabled={isFetchingLocation}
-                        title="Cập nhật vị trí"
-                        className="w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors disabled:opacity-50"
-                    >
-                        <RefreshCw size={15} className={isFetchingLocation ? "animate-spin" : ""} />
-                    </button>
-                )}
-            </div>
-
-            {/* Khu vực Tin nhắn */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6 scroll-smooth bg-gray-50/30">
-
-                {error && (
-                    <div className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-2xl px-4 py-3 shadow-sm">
-                        <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-[12px] text-red-600 font-medium leading-relaxed">{error}</p>
+            <aside className={`
+                w-full sm:w-[400px] md:w-[360px] lg:w-[400px] flex-shrink-0 h-full 
+                bg-white md:shadow-[-10px_0_40px_rgba(0,0,0,0.05)] flex flex-col z-40 
+                md:border-l border-gray-100 overflow-hidden md:order-3
+                fixed md:relative inset-0 md:inset-auto
+                transition-transform duration-300 ease-in-out
+                ${isMobileOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'}
+            `}>
+                {/* Thanh Tiêu đề (Header) */}
+                <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-white">
+                    <div className="relative flex-shrink-0">
+                        <div className="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center">
+                            <Bot size={19} className="text-white" />
+                        </div>
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${userLocation ? "bg-green-500" : "bg-amber-500"}`} />
                     </div>
-                )}
 
-                {messages.map((msg) => (
-                    <div
-                        key={msg.id}
-                        className={`flex gap-3 ${msg.type === "user" ? "justify-end" : "justify-start"}`}
-                    >
-                        {msg.type === "bot" && (
-                            <div className="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
-                                <Bot size={14} className="text-white" />
-                            </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-[15px] font-bold text-gray-900 leading-tight tracking-tight">Travel Assistant</p>
+                        {locationInfo ? (
+                            <p className="text-[12px] text-gray-500 truncate mt-0.5">{locationInfo.address}</p>
+                        ) : (
+                            <p className="text-[12px] text-amber-600 font-medium mt-0.5">
+                                {isFetchingLocation ? "Đang tải vị trí…" : userLocation ? "Đang tải vị trí…" : "Chưa có vị trí"}
+                            </p>
                         )}
+                    </div>
 
-                        <div className="max-w-[85%]">
-                            <div className={
-                                msg.type === "user"
-                                    ? "px-4.5 py-3 rounded-[20px] rounded-tr-[4px] bg-gray-900 text-white text-[14px] leading-relaxed shadow-sm"
-                                    : "px-4.5 py-3 rounded-[20px] rounded-tl-[4px] bg-white border border-gray-200/60 shadow-sm"
-                            }>
-                                {msg.type === "user" ? (
-                                    <p className="whitespace-pre-wrap">{msg.text}</p>
-                                ) : (
-                                    <MarkdownMessage text={msg.text} />
-                                )}
-                            </div>
+                    <div className="flex items-center gap-2">
+                        {locationInfo && (
+                            <button
+                                onClick={handleRefreshLocation}
+                                disabled={isFetchingLocation}
+                                title="Cập nhật vị trí"
+                                className="w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors disabled:opacity-50"
+                            >
+                                <RefreshCw size={15} className={isFetchingLocation ? "animate-spin" : ""} />
+                            </button>
+                        )}
+                        <button
+                            className="md:hidden w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors"
+                            onClick={() => setIsMobileOpen(false)}
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
+                </div>
 
-                            {msg.type === "bot" && msg.suggestions && msg.suggestions.length > 0 && (
-                                <div className="mt-2 pl-1">
-                                    <SuggestionChips
-                                        suggestions={msg.suggestions}
-                                        onSelect={sendMessage}
-                                    />
+                {/* Khu vực Tin nhắn */}
+                <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6 scroll-smooth bg-gray-50/30">
+
+                    {error && (
+                        <div className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-2xl px-4 py-3 shadow-sm">
+                            <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+                            <p className="text-[12px] text-red-600 font-medium leading-relaxed">{error}</p>
+                        </div>
+                    )}
+
+                    {messages.map((msg) => (
+                        <div
+                            key={msg.id}
+                            className={`flex gap-3 ${msg.type === "user" ? "justify-end" : "justify-start"}`}
+                        >
+                            {msg.type === "bot" && (
+                                <div className="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                                    <Bot size={14} className="text-white" />
                                 </div>
                             )}
 
-                            <p className={`text-[10px] text-gray-400 mt-1.5 font-medium ${msg.type === "user" ? "text-right mr-1" : "text-left ml-2"}`}>
-                                {msg.timestamp.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
-                            </p>
+                            <div className="max-w-[85%]">
+                                <div className={
+                                    msg.type === "user"
+                                        ? "px-4.5 py-3 rounded-[20px] rounded-tr-[4px] bg-gray-900 text-white text-[14px] leading-relaxed shadow-sm"
+                                        : "px-4.5 py-3 rounded-[20px] rounded-tl-[4px] bg-white border border-gray-200/60 shadow-sm"
+                                }>
+                                    {msg.type === "user" ? (
+                                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                                    ) : (
+                                        <MarkdownMessage text={msg.text} />
+                                    )}
+                                </div>
+
+                                {msg.type === "bot" && msg.suggestions && msg.suggestions.length > 0 && (
+                                    <div className="mt-2 pl-1">
+                                        <SuggestionChips
+                                            suggestions={msg.suggestions}
+                                            onSelect={sendMessage}
+                                        />
+                                    </div>
+                                )}
+
+                                <p className={`text-[10px] text-gray-400 mt-1.5 font-medium ${msg.type === "user" ? "text-right mr-1" : "text-left ml-2"}`}>
+                                    {msg.timestamp.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    ))}
 
-                {!userLocation && !isFetchingLocation && (
-                    <LocationRequestCard onRequest={handleRequestLocation} isLoading={isFetchingLocation} />
-                )}
+                    {!userLocation && !isFetchingLocation && (
+                        <LocationRequestCard onRequest={handleRequestLocation} isLoading={isFetchingLocation} />
+                    )}
 
-                {(isLoading || isFetchingLocation) && (
-                    <div className="flex gap-3 justify-start">
-                        <div className="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0 shadow-sm mt-1">
-                            <Bot size={14} className="text-white" />
+                    {(isLoading || isFetchingLocation) && (
+                        <div className="flex gap-3 justify-start">
+                            <div className="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0 shadow-sm mt-1">
+                                <Bot size={14} className="text-white" />
+                            </div>
+                            <div className="px-5 py-4 bg-white border border-gray-200/60 rounded-[20px] rounded-tl-[4px] flex gap-1.5 items-center shadow-sm">
+                                {[0, 150, 300].map((d) => (
+                                    <span
+                                        key={d}
+                                        className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce"
+                                        style={{ animationDelay: `${d}ms` }}
+                                    />
+                                ))}
+                            </div>
                         </div>
-                        <div className="px-5 py-4 bg-white border border-gray-200/60 rounded-[20px] rounded-tl-[4px] flex gap-1.5 items-center shadow-sm">
-                            {[0, 150, 300].map((d) => (
-                                <span
-                                    key={d}
-                                    className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce"
-                                    style={{ animationDelay: `${d}ms` }}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                )}
+                    )}
 
-                <div ref={messagesEndRef} className="h-4" />
-            </div>
+                    <div ref={messagesEndRef} className="h-4" />
+                </div>
 
-            {/* Khu vực Nhập tin nhắn */}
-            <div className="px-5 py-4 border-t border-gray-100 bg-white">
-                <form onSubmit={handleSubmit} className="flex items-center gap-2.5">
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        disabled={isLoading || !userLocation}
-                        placeholder={userLocation ? "Bạn muốn đi đâu..." : "Chia sẻ vị trí để bắt đầu..."}
-                        className="flex-1 text-[14px] px-4 py-3.5 rounded-2xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 focus:bg-white placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    />
-                    <button
-                        type="submit"
-                        disabled={isLoading || !input.trim() || !userLocation}
-                        className="w-[48px] h-[48px] rounded-2xl bg-gray-900 hover:bg-black disabled:bg-gray-200 text-white flex items-center justify-center flex-shrink-0 transition-colors active:scale-95 shadow-sm"
-                    >
-                        {isLoading ? <Loader size={18} className="animate-spin" /> : <Send size={18} />}
-                    </button>
-                </form>
-            </div>
-        </aside>
+                {/* Khu vực Nhập tin nhắn */}
+                <div className="px-5 py-4 border-t border-gray-100 bg-white">
+                    <form onSubmit={handleSubmit} className="flex items-center gap-2.5">
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            disabled={isLoading || !userLocation}
+                            placeholder={userLocation ? "Bạn muốn đi đâu..." : "Chia sẻ vị trí để bắt đầu..."}
+                            className="flex-1 text-[14px] px-4 py-3.5 rounded-2xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 focus:bg-white placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        />
+                        <button
+                            type="submit"
+                            disabled={isLoading || !input.trim() || !userLocation}
+                            className="w-[48px] h-[48px] rounded-2xl bg-gray-900 hover:bg-black disabled:bg-gray-200 text-white flex items-center justify-center flex-shrink-0 transition-colors active:scale-95 shadow-sm"
+                        >
+                            {isLoading ? <Loader size={18} className="animate-spin" /> : <Send size={18} />}
+                        </button>
+                    </form>
+                </div>
+            </aside>
+        </>
     );
 }

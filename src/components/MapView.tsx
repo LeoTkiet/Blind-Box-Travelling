@@ -21,6 +21,7 @@ export default function MapView({ userLocation, radius, result }: Props) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const resultMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
 
   // State quản lý xem map đã nạp xong style chưa để tránh lỗi Race Condition
   const [mapReady, setMapReady] = useState(false);
@@ -100,7 +101,7 @@ export default function MapView({ userLocation, radius, result }: Props) {
 
       resultMarkerRef.current?.remove();
       const el = document.createElement("div");
-      el.style.cssText = "width:28px;height:28px;border-radius:50%;background:#fff;border:2.5px solid #111827;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;";
+      el.style.cssText = "width:28px;height:28px;border-radius:50%;background:#fff;border:2.5px solid #111827;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.2); cursor: default;"; // Đổi cursor thành default để user không tưởng là nhấn được
       el.textContent = "📍";
 
       const popup = new mapboxgl.Popup({ offset: 18, closeButton: false }).setHTML(
@@ -110,12 +111,14 @@ export default function MapView({ userLocation, radius, result }: Props) {
         </div>`
       );
 
-      resultMarkerRef.current = new mapboxgl.Marker({ element: el })
+      popupRef.current = popup;
+      resultMarkerRef.current = new mapboxgl.Marker({ 
+        element: el,
+        draggable: false 
+      })
         .setLngLat([result.lng, result.lat])
-        .setPopup(popup)
         .addTo(map);
 
-      resultMarkerRef.current.togglePopup();
       map.flyTo({ center: [result.lng, result.lat], zoom: 15, duration: 1200 });
     };
 
@@ -131,7 +134,7 @@ export default function MapView({ userLocation, radius, result }: Props) {
       try {
         const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
         const query = await fetch(
-          `https://api.mapbox.com/directions/v5/mapbox/driving/${userLocation.lng},${userLocation.lat};${result.lng},${result.lat}?geometries=geojson&overview=full&access_token=${token}`
+          `https://api.mapbox.com/directions/v5/mapbox/driving/${userLocation.lng},${userLocation.lat};${result.lng},${result.lat}?geometries=geojson&overview=full&exclude=motorway&access_token=${token}`
         );
         const data = await query.json();
         if (!data.routes?.length) return;
@@ -159,6 +162,17 @@ export default function MapView({ userLocation, radius, result }: Props) {
         new mapboxgl.Popup({ closeButton: false, className: 'route-info-popup', offset: [0, -10] })
           .setLngLat(midCoords as [number, number])
           .setHTML(`
+            <style>
+              .route-info-popup .mapboxgl-popup-content {
+                background: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                border: none !important;
+              }
+              .route-info-popup .mapboxgl-popup-tip {
+                display: none !important;
+              }
+            </style>
             <div style="background: white; color: black; padding: 6px 12px; border-radius: 24px; font-weight: bold; display: flex; align-items: center; gap: 8px; border: 2px solid #111827; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
               <span style="font-size: 18px;">🛵</span>
               <span>${distanceKm} km (${durationMin} phút)</span>
@@ -177,9 +191,76 @@ export default function MapView({ userLocation, radius, result }: Props) {
     drawRoute();
   }, [mapReady, userLocation, result]);
 
+ 
+//ẩn/hiện tên địa điểm theo gps
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !userMarkerRef.current) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const uLat = pos.coords.latitude;
+        const uLng = pos.coords.longitude;
+        const newPos: [number, number] = [uLng, uLat];
+        
+        userMarkerRef.current?.setLngLat(newPos);
+
+        map.easeTo({ center: newPos, duration: 1000 });
+
+        if (result && popupRef.current) {
+          const dist = getDistanceKm(uLat, uLng, result.lat, result.lng);
+          
+          console.log(`Khoảng cách đến đích: ${dist.toFixed(3)} km`);
+          
+          if (dist <= 0.2) {
+            if (!popupRef.current.isOpen()) {
+              popupRef.current.setLngLat([result.lng, result.lat]).addTo(map);
+            }
+          } else {
+            if (popupRef.current.isOpen()) {
+              popupRef.current.remove();
+            }
+          }
+        }
+      },
+      (err) => {
+        console.error("Lỗi GPS:", err);
+      },
+      { 
+        enableHighAccuracy: true,
+        timeout: 10000,      
+        maximumAge: 0
+      }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [mapReady, result]);
+
+  // test ẩn/hiện địa điểm dựa trên vị trí giả lập trên map
+  useEffect(() => {
+  const map = mapRef.current;
+  if (!mapReady || !map || !userLocation || !result || !popupRef.current) return;
+
+  const dist = getDistanceKm(
+    userLocation.lat, 
+    userLocation.lng, 
+    result.lat, 
+    result.lng
+  );
+
+  console.log("Khoảng cách test địa chỉ:", dist.toFixed(3), "km");
+
+  if (dist <= 0.2) {
+    if (!popupRef.current.isOpen()) {
+      popupRef.current.setLngLat([result.lng, result.lat]).addTo(map);
+    }
+  } else {
+    if (popupRef.current.isOpen()) popupRef.current.remove();
+  }
+}, [userLocation, result, mapReady]);
   return (
-    <div style={{ flex: 1, position: "relative" }}>
-      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+    <div className="w-full h-full relative z-0">
+      <div ref={containerRef} className="w-full h-full" />
     </div>
   );
 }
@@ -196,4 +277,19 @@ function createCircle(lng: number, lat: number, radiusKm: number): GeoJSON.Featu
   }
   coords.push(coords[0]);
   return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [coords] } };
+}
+
+// tính khoảng cách
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
