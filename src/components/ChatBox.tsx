@@ -175,6 +175,54 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
     const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
     const [suggestedPlaces, setSuggestedPlaces] = useState<any[]>([]);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    
+    // DESKTOP RESIZE LOGIC
+    const [chatBoxWidth, setChatBoxWidth] = useState<number>(360);
+    const [isMobile, setIsMobile] = useState<boolean>(false);
+    const desktopDragRef = useRef<{ x: number, w: number, currentW?: number } | null>(null);
+    const asideRef = useRef<HTMLElement>(null);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        handleResize();
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
+
+    const onDesktopDragStart = (e: React.MouseEvent) => {
+        desktopDragRef.current = { x: e.clientX, w: chatBoxWidth };
+        document.addEventListener("mousemove", onDesktopDrag);
+        document.addEventListener("mouseup", onDesktopDragEnd);
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+    };
+
+    const onDesktopDrag = useCallback((e: MouseEvent) => {
+        if (!desktopDragRef.current) return;
+        // Kéo qua trái (x giảm) -> tăng w
+        // Kéo qua phải (x tăng) -> giảm w
+        const delta = desktopDragRef.current.x - e.clientX;
+        let newW = desktopDragRef.current.w + delta;
+        if (newW < 280) newW = 280;
+        if (newW > 600) newW = 600;
+        
+        // Direct DOM manipulation for maximum smoothness
+        if (asideRef.current && !isMobile) {
+            asideRef.current.style.width = `${newW}px`;
+        }
+        desktopDragRef.current.currentW = newW;
+    }, [isMobile]);
+
+    const onDesktopDragEnd = useCallback(() => {
+        if (desktopDragRef.current && desktopDragRef.current.currentW) {
+            setChatBoxWidth(desktopDragRef.current.currentW);
+        }
+        desktopDragRef.current = null;
+        document.removeEventListener("mousemove", onDesktopDrag);
+        document.removeEventListener("mouseup", onDesktopDragEnd);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+    }, [onDesktopDrag]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -367,14 +415,24 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
                 </div>
             </button>
 
-            <aside className={`
-                w-full sm:w-[400px] md:w-[360px] lg:w-[400px] flex-shrink-0 h-full 
+            <aside 
+                ref={asideRef}
+                className={`
+                w-full flex-shrink-0 h-full 
                 bg-white md:shadow-[-10px_0_40px_rgba(0,0,0,0.05)] flex flex-col z-40 
-                md:border-l border-gray-100 overflow-hidden md:order-3
+                md:border-l border-gray-100 md:order-3
                 fixed md:relative inset-0 md:inset-auto
                 transition-transform duration-300 ease-in-out
                 ${isMobileOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'}
-            `}>
+            `}
+            style={!isMobile ? { width: `${chatBoxWidth}px` } : undefined}
+            >
+                {!isMobile && (
+                    <div 
+                        onMouseDown={onDesktopDragStart}
+                        className="absolute top-0 left-[-2px] w-2.5 h-full cursor-col-resize hover:bg-gray-300/80 z-50 transition-colors"
+                    />
+                )}
                 {/* Thanh Tiêu đề (Header) */}
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-white">
                     <div className="relative flex-shrink-0">
