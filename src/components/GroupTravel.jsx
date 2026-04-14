@@ -5,15 +5,13 @@ import { createClient } from '@supabase/supabase-js';
 //1. KHỞI TẠO SUPABASE CLIENT
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase =
   supabaseUrl && supabaseAnonKey
     ? createClient(supabaseUrl, supabaseAnonKey)
     : null;
 
-export default function GroupRoom() {
+export default function GroupRoom({ embedded = false }) {
   // --- STATE MANAGEMENT  ---
   const [userId, setUserId] = useState(null); // Lưu ID ẩn danh
   const [roomCode, setRoomCode] = useState(''); // Mã phòng hiện tại
@@ -21,7 +19,7 @@ export default function GroupRoom() {
   const [members, setMembers] = useState([]); // Mảng chứa danh sách thành viên
 
   // --- 1.1: ĐĂNG NHẬP ẨN DANH NGAY KHI MỞ TRANG ---
-  // Chạy đúng 1 lần khi component được tạo 
+ 
   useEffect(() => {
     if (!supabase) return;
 
@@ -54,19 +52,19 @@ export default function GroupRoom() {
     }
   };
 
-  // --- 2: KẾT NỐI REALTIME (PHẦN ĂN TIỀN CỦA DEV 6) ---
+  // --- 2: KẾT NỐI REALTIME  ---
   useEffect(() => {
-    // Nếu chưa có mã phòng hoặc chưa có ID thì không làm gì cả
+   
     if (!roomCode || !userId || !supabase) return;
 
-    // Khởi tạo kênh chat riêng cho cái phòng này
+    
     const roomChannel = supabase.channel(`room_${roomCode}`, {
       config: {
         presence: { key: userId }, // Định danh tôi là ai trong phòng
       },
     });
 
-    // Lắng nghe sự kiện: Có người vào/ra phòng
+   
     roomChannel.on('presence', { event: 'sync' }, () => {
       const state = roomChannel.presenceState();
       // Chuyển mảng object phức tạp thành mảng đơn giản để render UI
@@ -74,10 +72,10 @@ export default function GroupRoom() {
       setMembers(currentMembers);
     });
 
-    // Bắt đầu kết nối (Subscribe)
+    
     roomChannel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        // Nếu kết nối thành công, báo danh với anh em trong phòng
+        
         await roomChannel.track({
           user_id: userId,
           joined_at: new Date().toLocaleTimeString(),
@@ -87,15 +85,15 @@ export default function GroupRoom() {
     });
 
     // CLEANUP FUNCTION (Giống hàm Hủy - Destructor trong C++)
-    // Chạy khi người dùng thoát Component hoặc đổi mã phòng khác
+    
     return () => {
       supabase.removeChannel(roomChannel); // Hủy lắng nghe, giải phóng bộ nhớ!
     };
-  }, [roomCode, userId]); // Effect này sẽ chạy lại nếu roomCode hoặc userId thay đổi
+  }, [roomCode, userId]); 
 
   // --- GIAO DIỆN (UI) ---
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 font-sans">
+    <div className={`${embedded ? 'bg-gray-50 py-4 px-0' : 'min-h-screen bg-gray-50 py-10 px-4'} flex flex-col items-center font-sans`}>
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6">
         <h1 className="text-2xl font-bold text-center text-indigo-600 mb-6">
           Blind Box Travelling 🎒
@@ -103,7 +101,7 @@ export default function GroupRoom() {
 
         {!supabase && (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            Thiếu cấu hình Supabase. Hãy thêm NEXT_PUBLIC_SUPABASE_URL và một trong hai key: NEXT_PUBLIC_SUPABASE_ANON_KEY hoặc NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY trong .env.local.
+            Thiếu cấu hình Supabase. Hãy thêm NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_ANON_KEY trong .env.local.
           </div>
         )}
 

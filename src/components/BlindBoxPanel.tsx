@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { UserLocation, LocationResult } from "./AppContent";
 import { Inter } from "next/font/google";
+import GroupRoom from "./GroupTravel";
 
 const inter = Inter({ subsets: ["latin", "vietnamese"], display: "swap" });
 
@@ -55,6 +56,7 @@ export default function BlindBoxPanel({
 
   // State to manage name visibility (Unlock)
   const [isRevealed, setIsRevealed] = useState(false);
+  const [showGroupRoom, setShowGroupRoom] = useState(false);
 
   // DRAG SHEET LOGIC
   const [sheetHeight, setSheetHeight] = useState<number>(30); // 30vh
@@ -319,6 +321,31 @@ export default function BlindBoxPanel({
         >
           {isGenerating ? "⏳ Đang lắc hộp..." : "🎲 Tạo hộp mù"}
         </button>
+
+        <button
+          onClick={() => setShowGroupRoom((prev) => !prev)}
+          style={{
+            width: "100%",
+            marginTop: "0.75rem",
+            padding: "0.875rem",
+            borderRadius: "12px",
+            border: "1px solid #d1d5db",
+            background: "#ffffff",
+            color: "#111827",
+            fontSize: "1rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+          }}
+        >
+          {showGroupRoom ? "✖ Đóng tạo phòng" : "👥 Tạo phòng nhóm"}
+        </button>
+
+        {showGroupRoom && (
+          <div style={{ marginTop: "0.75rem" }}>
+            <GroupRoom embedded />
+          </div>
+        )}
 
         {/* ── RESULT READY (Blind Box) ── */}
         {result && (
