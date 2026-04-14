@@ -1,14 +1,11 @@
 \contentsline {section}{\numberline {I}Phân tích \& Xác định bài toán}{1}{section.1}%
 \contentsline {subsection}{\numberline {I.I}Bối cảnh thực tế}{1}{subsection.1.1}%
 \contentsline {subsection}{\numberline {I.II}Xác định Input / Output}{1}{subsection.1.2}%
-\contentsline {section}{\numberline {II}Phân rã \& Nhận diện mẫu}{1}{section.2}%
-\contentsline {section}{\numberline {III}Trừu tượng hóa}{2}{section.3}%
-\contentsline {section}{\numberline {IV}Thiết kế thuật toán \& Biểu diễn}{2}{section.4}%
-\contentsline {subsection}{\numberline {IV.I}Thuật toán "Hidden Gem"}{2}{subsection.4.1}%
-\contentsline {subsubsection}{\numberline {IV.I.1}Hàm tính khoảng cách Haversine}{2}{subsubsection.4.1.1}%
-\contentsline {subsubsection}{\numberline {IV.I.2}Thuật toán tính điểm Hộp mù}{3}{subsubsection.4.1.2}%
-\contentsline {subsection}{\numberline {IV.II}Pseudocode (Quy trình ghép nhóm \& Gợi ý)}{3}{subsection.4.2}%
-\contentsline {section}{\numberline {V}Triển khai mô phỏng}{3}{section.5}%
-\contentsline {section}{\numberline {VI}Kiểm thử \& Cải tiến}{4}{section.6}%
-\contentsline {subsection}{\numberline {VI.I}Kịch bản kiểm thử (Test Cases)}{4}{subsection.6.1}%
-\contentsline {subsection}{\numberline {VI.II}Đề xuất cải tiến}{4}{subsection.6.2}%
+\contentsline {section}{\numberline {II}Phân rã (Decomposition) \& Thiết kế Module}{1}{section.2}%
+\contentsline {section}{\numberline {III}Các Hàm và Thuật toán trong Hệ Thống}{2}{section.3}%
+\contentsline {subsection}{\numberline {III.I}Các Thuật toán tại Module 1 \& Module 8 (Data Pipeline \& Smart Search)}{2}{subsection.3.1}%
+\contentsline {subsection}{\numberline {III.II}Luồng Random \& Gợi ý (Hidden Gem)}{3}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {III.II.1}Hàm tính khoảng cách Haversine}{3}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {III.II.2}Thuật toán tính điểm Hộp mù (Scoring Algorithm)}{3}{subsubsection.3.2.2}%
+\contentsline {section}{\numberline {IV}Các Công Cụ Sử Dụng Trong Module}{4}{section.4}%
+\contentsline {section}{\numberline {V}Tiến trình Thực hiện (Theo phân rã Module)}{4}{section.5}%

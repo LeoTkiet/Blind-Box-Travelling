@@ -280,6 +280,10 @@ INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\adobe\times\ptmri8r
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\vf\adobe\times\zptmcm7y.vf
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmsy10.tfm
 INPUT C:\Users\admin\AppData\Local\MiKTeX\fonts\tfm\public\rsfs\rsfs10.tfm
+INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\vntex\t5cmtt.fd
+INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\vntex\t5cmtt.fd
+INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\vntex\t5cmtt.fd
+INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\vntex\vnr\vntt12.tfm
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\vntex\urwvn\utmr8v.tfm
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\vntex\urwvn\utmr8v.tfm
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\vf\adobe\times\zptmcm7t.vf
@@ -290,12 +294,6 @@ INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\vf\adobe\times\zptmcm7v
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmex10.tfm
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmex10.tfm
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\adobe\symbol\psyr.tfm
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\vntex\urwvn\utmr8v.tfm
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\vntex\t5cmtt.fd
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\vntex\t5cmtt.fd
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\tex\latex\vntex\t5cmtt.fd
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\vntex\vnr\vntt10.tfm
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\tfm\vntex\urwvn\utmr8v.tfm
 INPUT main.aux
 INPUT .\main.out
 INPUT .\main.out
@@ -309,8 +307,6 @@ INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\public\amsfonts\c
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\public\amsfonts\cm\cmsy10.pfb
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\urw\symbol\usyr.pfb
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\urw\symbol\usyr.pfb
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\urw\symbol\usyr.pfb
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\urw\symbol\usyr.pfb
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\urwvn\utmb8v.pfb
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\urwvn\utmb8v.pfb
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\urw\times\utmr8a.pfb
@@ -321,5 +317,5 @@ INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\urw\times\utmri8a
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\urw\times\utmri8a.pfb
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\urwvn\utmri8v.pfb
 INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\urwvn\utmri8v.pfb
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\vnr\vntt10.pfb
-INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\vnr\vntt10.pfb
+INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\vnr\vntt12.pfb
+INPUT C:\Users\admin\AppData\Local\Programs\MiKTeX\fonts\type1\vntex\vnr\vntt12.pfb

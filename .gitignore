@@ -63,5 +63,4 @@ __pycache__/
 *.dvi
 *.run.xml
 *.pdf
-# (Tuỳ chọn: Nếu bạn không muốn giữ file pdf thì để *.pdf, nếu bạn cần thì xoá *.pdf ra khỏi .gitignore)
 *.gz
