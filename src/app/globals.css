@@ -24,3 +24,29 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Chat animation keyframes */
+@keyframes bounce-with-delay {
+
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+
+  40% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-bounce {
+  animation: bounce-with-delay 1.4s infinite;
+}
+
+.animate-bounce.delay-100 {
+  animation-delay: 0.2s;
+}
+
+.animate-bounce.delay-200 {
+  animation-delay: 0.4s;
+}
