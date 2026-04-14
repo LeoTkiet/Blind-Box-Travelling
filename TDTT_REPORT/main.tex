@@ -79,105 +79,75 @@ Bài toán được chuyển từ yêu cầu mơ hồ sang các tham số có th
     \end{itemize}
 \end{itemize}
 
-\section{Phân rã \& Nhận diện mẫu}
-Hệ thống được phân rã thành các module logic chạy độc lập nhưng liên kết chặt chẽ. Cấu trúc tuân theo mẫu (Pattern) chung: Thu thập $\rightarrow$ Lọc $\rightarrow$ Xếp hạng $\rightarrow$ Hiển thị.
+\section{Phân rã (Decomposition) \& Thiết kế Module}
+Hệ thống được thiết kế theo kiến trúc Microservices/Serverless và được phân rã thành các module logic chạy độc lập nhưng liên kết chặt chẽ với nhau. Dựa trên nghiệp vụ, hệ thống bao gồm 8 Module chính:
 \begin{enumerate}
-    \item \textbf{Thu thập:} Cào dữ liệu offline (Python) $\rightarrow$ Clean $\rightarrow$ Supabase (Data Warehouse).
-    \item \textbf{Input:} Geolocation API lấy tọa độ; Supabase Realtime gom nhóm và tính trung bình sở thích.
-    \item \textbf{Lọc \& Xếp hạng:} Thuật toán "Hidden Gem" query vào Database, lọc theo bán kính và tính điểm.
-    \item \textbf{Gia tăng giá trị:} Tích hợp OpenWeatherMap + Gemini API sinh nội dung gợi ý.
-    \item \textbf{Hiển thị \& Điều hướng:} Mapbox API dẫn đường, Canvas-confetti tạo hiệu ứng khi khoảng cách $< 200m$.
+    \item \textbf{Thu thập (Module 1):} Cào dữ liệu offline bằng Python $\rightarrow$ Làm sạch và chuẩn hóa $\rightarrow$ Tải lên Supabase (Data Warehouse).
+    \item \textbf{Input (Module 2 \& 6):} Sử dụng Geolocation.getCurrentPosition API lấy tọa độ; Ứng dụng Supabase Realtime để gom nhóm người dùng thành viên và tính trung bình sở thích.
+    \item \textbf{Lọc \& Xếp hạng (Module 3):} Hoạt động dựa trên thuật toán "Hidden Gem", query trực tiếp vào Database, lọc theo bán kính yêu cầu và tính điểm xếp hạng để tìm ra điểm duy nhất.
+    \item \textbf{Gia tăng giá trị trải nghiệm (Module 4 \& 5):} Hệ thống kết hợp thông tin dự báo thời tiết từ OpenWeatherMap cùng với Gemini API (LLM) để sinh ra Content mồi, tạo sự tò mò.
+    \item \textbf{Hiển thị \& Điều hướng (Module 7):} Tích hợp thư viện Mapbox API để dẫn đường trên bản đồ tương tác, dùng Canvas-confetti tạo hiệu ứng chúc mừng (pháo hoa) khi khoảng cách $< 200m$.
+    \item \textbf{Tìm kiếm thông minh - Smart Search (Module 8):} Đánh giá và lọc các category cũng như keywords dựa trên Tagging thông minh từ AI, mang lại khả năng phân loại và truy vấn dữ liệu linh hoạt.
 \end{enumerate}
 
-\section{Trừu tượng hóa}
-Để hệ thống chạy mượt mà trên Next.js và tối ưu hóa hiệu suất cơ sở dữ liệu, bài toán được trừu tượng hóa:
+\section{Các Hàm và Thuật toán trong Hệ Thống}
+\subsection{Các Thuật toán tại Module 1 \& Module 8 (Data Pipeline \& Smart Search)}
 \begin{itemize}
-    \item \textbf{Bỏ chi tiết thừa:} Không lưu trữ toàn bộ thực đơn, không lưu chi tiết từng bình luận của khách hàng, bỏ qua hình ảnh độ phân giải cao tại database lõi.
-    \item \textbf{Giữ yếu tố cốt lõi:} Chỉ lưu trữ Tọa độ (Point geometry), Rating trung bình, Tổng số lượt đánh giá, và các Tags phân loại.
-    \item \textbf{AI Hỗ trợ trích xuất dữ liệu:} Thay vì dùng thuật toán đọc hiểu văn bản thuần túy, sử dụng AI duyệt qua dữ liệu thô để gán nhãn tự động. Trong runtime, AI sinh ra các insights ngắn gọn thay vì hiển thị dữ liệu thô cho người dùng.
+    \item \textbf{Exponential Backoff \& Jitter:} Thuật toán quản lý tải khi gặp lỗi từ các API nhà cung cấp. Thời gian chờ tăng theo hàm mũ và cộng thêm yếu tố ngẫu nhiên nhằm tránh tình trạng gửi request đồng loạt khi server API mở lại. Dùng trong file \texttt{enricher.js}.
+    \item \textbf{Token Bucket (Rate Limiter):} Giới hạn số lượng request theo đơn vị thời gian cho các API Client để không vi phạm chính sách của Google (Gemini API)/Groq.
+    \item \textbf{JSON Parse/Repair:} Xử lý sâu vào Response của AI. Dùng cấu trúc vòng lặp Match để tìm đối tượng JSON hợp lệ bị đưa lẫn vào markdown; nếu hỏng sẽ quay lui ép AI sửa format.
 \end{itemize}
 
-\section{Thiết kế thuật toán \& Biểu diễn}
-\subsection{Thuật toán "Hidden Gem"}
+\subsection{Luồng Random \& Gợi ý (Hidden Gem)}
 \subsubsection{Hàm tính khoảng cách Haversine}
-Sử dụng để tính khoảng cách giữa hai tọa độ trên bề mặt trái đất.
+Sử dụng phương pháp Haversine để tính khoảng cách đường chim bay giữa hai điểm trên bề mặt hình cầu dựa vào vĩ độ và kinh độ.
 \begin{equation}
-a = \sin^2\left(\frac{\Delta\phi}{2}\right) + \cos\phi_1 \cdot \cos\phi_2 \cdot \sin^2\left(\frac{\Delta\lambda}{2}\right)
+a = \sin^2\left(\frac{\Delta Lat}{2}\right) + \cos(Lat_1) \cdot \cos(Lat_2) \cdot \sin^2\left(\frac{\Delta Lng}{2}\right)
 \end{equation}
 \begin{equation}
 d = R \cdot 2 \cdot \text{atan2}(\sqrt{a}, \sqrt{1-a})
 \end{equation}
-Trong đó $R = 6371$ km.
+Trong đó $R = 6371$ km là bán kính trung bình của Trái Đất.
 
-\subsubsection{Thuật toán tính điểm Hộp mù}
-Mục tiêu là tìm ra các địa điểm có chất lượng tốt nhưng ít phổ biến.
+\subsubsection{Thuật toán tính điểm Hộp mù (Scoring Algorithm)}
+Thuật toán được thiết kế để đưa ra điểm $TotalScore$ cân bằng giữa chất lượng (Quality), độ bí ẩn (Anonymity) và tính bất ngờ (Random).
 \begin{itemize}
-    \item \textbf{Quality Score ($S_q$):} Điểm đánh giá (rating) / 5.0.
-    \item \textbf{Anonymity Score ($S_a$):} Đo mức độ "bí ẩn". Càng ít bài đánh giá (reviews), điểm càng cao.
+    \item \textbf{Quality Score ($S_q$) theo Bayesian Average:} Nhằm khắc phục trường hợp các địa điểm có ít đánh giá nhưng đạt 5 sao cao đột biến. Điểm số được tinh chỉnh kéo về hệ số trung bình của khu vực ($m$) kết hợp tham số tự tin ($C$).
+    \begin{equation}
+    S_q = \left[ \frac{\text{reviews\_count} \times \text{rating} + C \times m}{\text{reviews\_count} + C} \right] \div 5.0
+    \end{equation}
+    \item \textbf{Anonymity Score ($S_a$):} Điểm địa điểm phải đáp ứng lượng review cận dưới (ngưỡng $\ge 10$) để đảm bảo điểm đến hiện hữu. Tuy nhiên, nếu có quá ít lượt đánh giá so với max reviews vùng thì điểm ẩn dật sẽ càng cao để kích thích khám phá.
     \begin{equation}
     S_a = 1 - \frac{\log_{10}(\text{reviews\_count} + 1)}{\log_{10}(\text{max\_reviews\_in\_area} + 1)}
     \end{equation}
-    \item \textbf{Random Score ($S_r$):} Điểm ngẫu nhiên để tạo yếu tố bất ngờ.
+    \item \textbf{Random Score ($S_r$):} Điểm ngẫu nhiên tạo độ nhiễu an toàn. Dùng \texttt{Math.random()} cấu thành.
 \end{itemize}
-
-\textbf{Công thức tổng hợp:}
+\textbf{Công thức tổng hợp Scoring:}
 \begin{equation}
-\text{TotalScore} = (S_q \times 0.4) + (S_a \times 0.4) + (S_r \times 0.2)
+\text{TotalScore} = (S_q \times 0.45) + (S_a \times 0.30) + (S_r \times 0.25)
 \end{equation}
+Điểm có Total Score cao nhất trong kết quả filter sẽ được trả về cho người dùng.
 
-\subsection{Pseudocode (Quy trình ghép nhóm \& Gợi ý)}
-\begin{algorithm}[H]
-\caption{Thuật toán Group Match \& Tìm Hidden Gem}
-\begin{algorithmic}[1]
-\Require Nhóm $G$ gồm $n$ user, Bán kính $R$, GPS hiện tại $(lat, lng)$
-\Ensure Điểm đến $Target$, Lời khuyên $AI\_Advice$
-\State $Avg\_Preferences \gets \text{CalculateAverage}(G)$
-\State $Valid\_Locations \gets \text{QuerySupabase}(lat, lng, R, Avg\_Preferences)$
-\For{each $loc \in Valid\_Locations$}
-    \State $Score[loc] \gets (\alpha \cdot loc.Rating) - (\beta \cdot \ln(loc.RevCount)) + \gamma \cdot \text{rand()}$
-\EndFor
-\State $Target \gets \text{MaxScore}(Valid\_Locations, Score)$
-\State $Weather \gets \text{OpenWeatherAPI}(Target.lat, Target.lng)$
-\State $Prompt \gets \text{"Dua vao: "} + Target.tags + \text{ va } + Weather$
-\State $AI\_Advice \gets \text{GeminiAPI}(Prompt)$
-\State \Return $Target$, $AI\_Advice$
-\end{algorithmic}
-\end{algorithm}
-
-\section{Triển khai mô phỏng}
-Hệ thống được thiết kế với kiến trúc hiện đại, khả năng scale tốt:
+\section{Các Công Cụ Sử Dụng Trong Module}
 \begin{itemize}
-    \item \textbf{Backend \& Realtime:} Sử dụng Supabase PostgreSQL có hỗ trợ PostGIS tính toán khoảng cách tọa độ nhanh chóng. Edge Functions của Supabase xử lý logic Hidden Gem.
-    \item \textbf{Tích hợp AI:} Module gọi Gemini API (Mô phỏng bằng Node.js fetch).
+    \item \textbf{Python \& Selenium WebDriver:} Công cụ tự động hóa trong module Crawler để giả lập thao tác của người dùng lướt bản đồ số và thu thập dữ liệu DOM động từ client.
+    \item \textbf{Node.js \& Các SDK (\texttt{@google/generative-ai}, \texttt{groq-sdk}):} Sử dụng trong module Enricher để đẩy dữ liệu phân loại bất đồng bộ siêu tốc.
+    \item \textbf{Các mô hình ngôn ngữ lớn (LLMs):} \texttt{gemini-2.5-flash} (Google), \texttt{llama-3.3-70b-versatile} (Groq), và các public models qua \textbf{OpenRouter}. Chúng dùng để cào nhãn thực thể (Analyst) và review kiểm soát nội dung (Supervisor).
+    \item \textbf{Next.js (React Framework):} Framework gốc xử lý Frontend UX/UI, Routing và Backend Serverless cho các truy xuất API.
+    \item \textbf{Supabase (PostgreSQL Database):} Nơi lưu trữ đám mây cung cấp các truy vấn bảng phức tạp và Row Level Security bảo mật dữ liệu.
+    \item \textbf{Phụ trợ API:} \textbf{Mapbox} (hiển thị, marker bản đồ động) và \textbf{OpenWeatherMap API} (bản tin thời tiết thời gian thực phục vụ content AI của dự án).
+    \item \textbf{TailwindCSS \& Framer Motion:} Xây dựng hệ thống UI tối giản với hiệu ứng mượt mà.
 \end{itemize}
 
-\textbf{Đoạn mã mô phỏng tích hợp Gemini AI (Next.js Server Action):}
-\begin{lstlisting}[basicstyle=\footnotesize\ttfamily, frame=single]
-import { GoogleGenerativeAI } from "@google/generative-ai";
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-export async function generateBlindBoxClue(locationTags, weather) {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const prompt = `Viet 30 tu mieu ta bi an ve mot dia diem co cac 
-  dac diem: ${locationTags}. Thoi tiet hien tai: ${weather}. 
-  Goi y 2 mon do mang theo. Khong nhac ten quan.`;
-  
-  const result = await model.generateContent(prompt);
-  return result.response.text();
-}
-\end{lstlisting}
-
-\section{Kiểm thử \& Cải tiến}
-\subsection{Kịch bản kiểm thử (Test Cases)}
+\section{Tiến trình Thực hiện (Theo phân rã Module)}
+Dựa trên kiến trúc 8 module đã đề ra, tiến độ thực tế được ghi nhận đến hiện tại như sau:
 \begin{itemize}
-    \item \textbf{Kịch bản 1 (Mất sóng GPS):} Hệ thống yêu cầu user chọn điểm xuất phát thủ công trên bản đồ.
-    \item \textbf{Kịch bản 2 (Nhóm có sở thích trái ngược):} Thuật toán Realtime ghi nhận mâu thuẫn, tự động kích hoạt mode "Cưa đôi" (Random theo sở thích của 2 phe) hoặc chọn một địa điểm Trung tính.
-    \item \textbf{Kịch bản 3 (Vùng ven/Không có quán):} Nếu bán kính $R$ trả về rỗng, hệ thống tự động gọi đệ quy tăng $R$ lên $1.5 \times R$ hoặc cảnh báo mở rộng khu vực.
-\end{itemize}
-\subsection{Đề xuất cải tiến}
-\begin{itemize}
-    \item Tích hợp Machine Learning để học hỏi lịch sử "Mở hộp" của người dùng, từ đó tinh chỉnh hệ số $\alpha, \beta$ cá nhân hóa.
-    \item Sử dụng Augmented Reality (AR) thay vì hiệu ứng 2D để khi đến nơi, người dùng dùng camera quét không gian mở khóa tên quán.
+    \item \textbf{Module 1 (Thu thập - Hoàn thành 100\%):} Đã viết xong mã nguồn \texttt{crawl\_data.py} tự động lấy thông tin từ Google Maps bằng Selenium. Làm giàu, gán nhãn tags thành công \texttt{data\_enriched.json} với AI (\texttt{enricher.js}) và đẩy đủ dữ liệu mẫu lên kho chứa hệ thống Supabase.
+    \item \textbf{Module 2 \& 6 (Input \& Group Mode - Đang phát triển):} Đã lấy thành công \texttt{lat, lng} của người dùng qua HTML5 Geolocation (Module 2). Về tính năng Gom nhóm và tính trung bình sở thích qua Supabase Realtime (Module 6), hiện đang hoàn tất thiết kế kiến trúc và chuẩn bị code realtime.
+    \item \textbf{Module 3 (Lọc \& Xếp hạng - Hoàn thành 100\%):} Hoàn thiện hàm API \texttt{/api/blind-box}. Trích xuất thành công dữ liệu từ DB, loại bỏ địa điểm ngoài bán kính thực tế bằng công thức Haversine; tính điểm và trả về \texttt{TotalScore} chính xác nhờ áp dụng hệ số đánh giá tĩnh Bayesian Average kết hợp Logarit.
+    \item \textbf{Module 4 \& 5 (Gia tăng giá trị trải nghiệm - Hoàn thành 100\%):} Đã thiết lập xong Engine Prompt tại \texttt{/api/ai-experience}. Fetch đồng thời dữ liệu OpenWeatherMap phục vụ logic "thời tiết hiện tại" và gọi LLM thông qua Groq API trả về các đoạn phân tích tò mò mập mờ hoàn hảo.
+    \item \textbf{Module 7 (Hiển thị \& Điều hướng - Đang hoàn thiện):} Đã nhúng xong thư viện Mapbox trên trang UI Next.js, tạo Marker thành công lên bản đồ ứng dụng. Tính năng dẫn đường chi tiết và phát động Canvas-confetti (khi tới gần $< 200m$) đang được tối ưu kiểm thử.
+    \item \textbf{Module 8 (Smart Search - Chờ ráp UI):} Thuật toán gắn nhãn tìm kiếm (Tagging/Categorizing) trong dữ liệu đã phủ đủ và chuẩn hóa. Cấu trúc Back-end hỗ trợ lọc thông minh đã có, phần UI box Smart Search trên ứng dụng Frontend đang được chắp nối để chạy hoàn chỉnh.
 \end{itemize}
 
 % References (Nếu bạn có file ref.tex thì mở comment)

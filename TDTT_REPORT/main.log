@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.31)  31 MAR 2026 20:46
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.31)  14 APR 2026 20:59
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -624,7 +624,7 @@ Package hyperref Info: Link coloring ON on input line 42.
 
 \c@lstlisting=\count334
 (content/title.tex
-<img/hcmus-logo.png, id=59, 597.9138pt x 597.9138pt>
+<img/hcmus-logo.png, id=47, 597.9138pt x 597.9138pt>
 File: img/hcmus-logo.png Graphic file (type png)
 <use img/hcmus-logo.png>
 Package pdftex.def Info: img/hcmus-logo.png  used on input line 5.
@@ -679,32 +679,43 @@ l.49 \listoftables
 LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 66.
  (C:\Users\admin\AppData\Local\Programs\MiKTeX\tex/latex/psnfss\ts1ptm.fd
 File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
-) [1{C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/base/8r.enc}] [2]
-Package hyperref Info: bookmark level for unknown algorithm defaults to 0 on input line 130.
- [3]
-LaTeX Font Info:    Trying to load font information for T5+cmtt on input line 155.
+) [1{C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/base/8r.enc}]
+LaTeX Font Info:    Trying to load font information for T5+cmtt on input line 96.
  (C:\Users\admin\AppData\Local\Programs\MiKTeX\tex/latex/vntex\t5cmtt.fd
 File: t5cmtt.fd 1999/05/25 v2.5h Standard LaTeX font definitions
-) [4] (main.aux)
+) [2]
+Overfull \hbox (8.34575pt too wide) in paragraph at lines 113--114
+\T5/ptm/m/n/12 Thuªt to¡n ^^_÷ñc thi¸t k¸ ^^_º ^^_÷a ra ^^_iºm $\OML/ztmcm/m/it/12 TotalScore$ \T5/ptm/m/n/12 c¥n b¬ng giúa ch§t l÷ñng (Qual-ity), ^^_ë b½ ©n (Anonymity)
+ []
+
+[3]
+LaTeX Font Info:    Font shape `T5/cmtt/bx/n' in size <12> not available
+(Font)              Font shape `T5/cmtt/m/n' tried instead on input line 134.
+
+Overfull \hbox (5.12457pt too wide) in paragraph at lines 145--146
+\T5/ptm/m/n/12 thæng tin tø Google Maps b¬ng Se-le-nium. L m gi u, g¡n nh¢n tags th nh cæng \T5/cmtt/m/n/12 data_enriched.json
+ []
+
+[4] [5] (main.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2025-12-24>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 239DB618A06236FA77CAE16B7508BED8;2835.
+(rerunfilecheck)             Checksum: 512B489705271588D70399C242B29790;2983.
  ) 
 Here is how much of TeX's memory you used:
- 13880 strings out of 467870
- 211522 string characters out of 5418355
- 751979 words of memory out of 5000000
- 42479 multiletter control sequences out of 15000+600000
- 701189 words of font info for 107 fonts, out of 8000000 for 9000
+ 13594 strings out of 467870
+ 208944 string characters out of 5418355
+ 629971 words of memory out of 5000000
+ 42207 multiletter control sequences out of 15000+600000
+ 696663 words of font info for 105 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 90i,11n,93p,566b,1155s stack positions out of 10000i,1000n,20000p,200000b,200000s
-<C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmex10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/urw/symbol/usyr.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/urw/symbol/usyr.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/urwvn/utmb8v.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/urwvn/utmr8v.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/urwvn/utmri8v.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/vnr/vntt10.pfb>
-Output written on main.pdf (8 pages, 376554 bytes).
+ 90i,12n,93p,569b,543s stack positions out of 10000i,1000n,20000p,200000b,200000s
+<C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmex10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/urw/symbol/usyr.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/urwvn/utmb8v.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/urwvn/utmr8v.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/urwvn/utmri8v.pfb><C:/Users/admin/AppData/Local/Programs/MiKTeX/fonts/type1/vntex/vnr/vntt12.pfb>
+Output written on main.pdf (9 pages, 365234 bytes).
 PDF statistics:
- 212 PDF objects out of 1000 (max. 8388607)
- 48 named destinations out of 1000 (max. 500000)
- 118 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 180 PDF objects out of 1000 (max. 8388607)
+ 34 named destinations out of 1000 (max. 500000)
+ 94 words of extra memory for PDF output out of 10000 (max. 10000000)
 
