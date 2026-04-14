@@ -58,6 +58,25 @@ export default function MapView({ userLocation, radius, result }: Props) {
     };
   }, []);
 
+  // ResizeObserver để tự động resize map khi kéo tab Panel hoặc ChatBox
+  useEffect(() => {
+    if (!containerRef.current) return;
+    let rafId: number;
+    const observer = new ResizeObserver(() => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (mapRef.current) {
+          mapRef.current.resize();
+        }
+      });
+    });
+    observer.observe(containerRef.current);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, []);
+
   // 2. Vẽ marker vị trí User và hình tròn bán kính
   useEffect(() => {
     const map = mapRef.current;
