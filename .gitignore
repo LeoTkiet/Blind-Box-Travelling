@@ -42,6 +42,8 @@ next-env.d.ts
 
 # data
 **data.json
+**/data/
+**/api_keys.json
 
 # pycache
 __pycache__
