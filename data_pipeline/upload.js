@@ -1,65 +1,106 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
+const path = require('path');
 
-// warning: set env before run
-// $env:SUPABASE_URL="https://your-project.supabase.co"
-// $env:SUPABASE_ANON_KEY="your-anon-key"
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY; 
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.error('Error: Please set SUPABASE_URL and SUPABASE_ANON_KEY environment variables.');
-    process.exit(1);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+function ensureArray(data) {
+    if (!data) return null;
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+        try {
+            const parsed = JSON.parse(data);
+            if (Array.isArray(parsed)) return parsed;
+            return [parsed];
+        } catch (e) {
+            return data.split(',').map(item => item.trim());
+        }
+    }
+    return [data];
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-async function seedData() {
+async function uploadEnrichedData() {
     try {
-        console.log('Reading data.json file...');
-        const rawData = fs.readFileSync('data.json', 'utf8');
-        const locations = JSON.parse(rawData); // read data from json file
+        console.log('1. Đang đọc dữ liệu...');
+        const enrichedRaw = fs.readFileSync(path.join(__dirname, 'data', 'data_enriched.json'), 'utf8');
+        const vectorsRaw = fs.readFileSync(path.join(__dirname, 'data', 'data_vectors.json'), 'utf8');
 
-        console.log(`Found ${locations.length} locations in local file.`);
+        const enrichedLocations = JSON.parse(enrichedRaw);
+        const vectorLocations = JSON.parse(vectorsRaw);
 
-        console.log('Checking existing data on Supabase...');
+        console.log('2. Đang phân tích file Vector...');
+        const vectorMap = new Map();
+        vectorLocations.forEach(v => {
+            if (v.name) {
+                // Chuyển tên về CHỮ THƯỜNG và xóa khoảng trắng để khớp nối chuẩn hơn
+                const cleanName = v.name.toLowerCase().trim();
+                vectorMap.set(cleanName, v.embedding);
+            }
+        });
 
-        // get existing data from supabase
-        const { data: existingData, error: fetchError } = await supabase
-            .from('locations')
-            .select('name');
+        let matchCount = 0;
+        let missingCount = 0;
 
-        if (fetchError) throw fetchError;
+        const mergedData = enrichedLocations.map(loc => {
+            const cleanName = loc.name ? loc.name.toLowerCase().trim() : '';
+            const rawEmbedding = vectorMap.get(cleanName);
+            
+            if (rawEmbedding) matchCount++; else missingCount++;
 
-        // get new locations
-        const existingNames = new Set(existingData.map(item => item.name));
-        const newLocations = locations.filter(loc => !existingNames.has(loc.name));
+            let formattedEmbedding = null;
+            if (rawEmbedding) {
+                formattedEmbedding = Array.isArray(rawEmbedding) 
+                    ? `[${rawEmbedding.join(',')}]` 
+                    : `[${rawEmbedding.replace(/\[|\]/g, '')}]`;
+            }
 
-        if (newLocations.length === 0) {
-            console.log('All data is up to date. No new locations to upload!');
+            return {
+                name: loc.name,
+                category: loc.category,
+                lat: loc.lat,
+                lng: loc.lng,
+                rating: loc.rating,
+                reviews_count: loc.reviews_count,
+                tags_price: ensureArray(loc.tags_price || (loc.tags && loc.tags.price)),
+                tags_location: ensureArray(loc.tags_location || (loc.tags && loc.tags.location)),
+                tags_audience: ensureArray(loc.tags_audience || (loc.tags && loc.tags.audience)),
+                tags_time: ensureArray(loc.tags_time || (loc.tags && loc.tags.time)),
+                tags_highlight: ensureArray(loc.tags_highlight || (loc.tags && loc.tags.highlight)),
+                tags: loc.tags ? (typeof loc.tags === 'object' && !Array.isArray(loc.tags) ? loc.tags : ensureArray(loc.tags)) : null,
+                search_document: loc.search_document || null,
+                embedding: formattedEmbedding 
+            };
+        });
+
+        console.log(`\n📊 KẾT QUẢ KHỚP NỐI:`);
+        console.log(`   - Tìm thấy vector cho: ${matchCount} quán ✅`);
+        console.log(`   - Không thấy vector cho: ${missingCount} quán ❌`);
+
+        if (matchCount === 0) {
+            console.error('\n🚨 CẢNH BÁO: Không có quán nào khớp tên giữa 2 file JSON! Hãy kiểm tra lại cột "name" trong 2 file.');
             return;
         }
 
-        console.log(`Found ${newLocations.length} NEW locations. Uploading to Supabase...`);         // upload new locations to supabase
+        const uniqueDataMap = new Map();
+        mergedData.forEach(item => uniqueDataMap.set(item.name, item));
+        const dataToUpsert = Array.from(uniqueDataMap.values());
 
-        /*
-        use upsert to prevent duplicate data
-        */
-        const { error: upsertError } = await supabase
-            .from('locations')
-            .upsert(newLocations, {
-                onConflict: 'name', // using 'name' column to prevent duplicate data
-                ignoreDuplicates: true // ignore duplicate data
-            });
-
-        if (upsertError) {
-            throw upsertError;
+        console.log(`\n3. Đang đẩy ${dataToUpsert.length} bản ghi lên Supabase (Batch 50)...`);
+        const BATCH_SIZE = 50; 
+        for (let i = 0; i < dataToUpsert.length; i += BATCH_SIZE) {
+            const batch = dataToUpsert.slice(i, i + BATCH_SIZE);
+            const { error } = await supabase.from('locations').upsert(batch, { onConflict: 'name' }); 
+            if (error) throw error;
+            console.log(`   -> Đã xong đợt ${Math.floor(i/BATCH_SIZE)+1}`);
         }
 
-        console.log('Data uploaded successfully!');
+        console.log('\n🎉 HOÀN TẤT THÀNH CÔNG!');
     } catch (err) {
-        console.error('An error occurred:', err.message);
+        console.error('❌ Lỗi:', err.message);
     }
 }
 
-seedData();
+uploadEnrichedData();
