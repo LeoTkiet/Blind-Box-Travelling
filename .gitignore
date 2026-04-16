@@ -42,7 +42,27 @@ next-env.d.ts
 
 # data
 **data.json
+**/data/
+**/api_keys.json
 
 # pycache
 __pycache__
 __pycache__/
+
+# LaTeX output files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.toc
+*.synctex.gz
+*.dvi
+*.run.xml
+*.pdf
+*.gz

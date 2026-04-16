@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { UserLocation, LocationResult } from "./AppContent";
 import { Inter } from "next/font/google";
+import GroupRoom from "./GroupTravel";
 
 const inter = Inter({ subsets: ["latin", "vietnamese"], display: "swap" });
 
@@ -55,12 +56,51 @@ export default function BlindBoxPanel({
 
   // State to manage name visibility (Unlock)
   const [isRevealed, setIsRevealed] = useState(false);
+  const [showGroupRoom, setShowGroupRoom] = useState(false);
 
   // DRAG SHEET LOGIC
   const [sheetHeight, setSheetHeight] = useState<number>(30); // 30vh
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const dragStartRef = useRef<{ y: number, h: number } | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  // DESKTOP RESIZE LOGIC
+  const [panelWidth, setPanelWidth] = useState<number>(360);
+  const desktopDragRef = useRef<{ x: number, w: number, currentW?: number } | null>(null);
+  const asideRef = useRef<HTMLElement>(null);
+
+  const onDesktopDragStart = (e: React.MouseEvent) => {
+    desktopDragRef.current = { x: e.clientX, w: panelWidth };
+    document.addEventListener("mousemove", onDesktopDrag);
+    document.addEventListener("mouseup", onDesktopDragEnd);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const onDesktopDrag = useCallback((e: MouseEvent) => {
+    if (!desktopDragRef.current) return;
+    const delta = e.clientX - desktopDragRef.current.x;
+    let newW = desktopDragRef.current.w + delta;
+    if (newW < 280) newW = 280;
+    if (newW > 600) newW = 600;
+    
+    // Direct DOM manipulation for maximum smoothness without triggering React re-renders constantly
+    if (asideRef.current && !isMobile) {
+      asideRef.current.style.width = `${newW}px`;
+    }
+    desktopDragRef.current.currentW = newW;
+  }, [isMobile]);
+
+  const onDesktopDragEnd = useCallback(() => {
+    if (desktopDragRef.current && desktopDragRef.current.currentW) {
+      setPanelWidth(desktopDragRef.current.currentW);
+    }
+    desktopDragRef.current = null;
+    document.removeEventListener("mousemove", onDesktopDrag);
+    document.removeEventListener("mouseup", onDesktopDragEnd);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, [onDesktopDrag]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -149,12 +189,19 @@ export default function BlindBoxPanel({
 
   return (
     <aside 
-      className={`${inter.className} w-full md:w-[360px] flex-shrink-0 md:border-r border-[#e5e7eb] bg-white flex flex-col overflow-hidden z-10 absolute md:relative bottom-0 left-0 md:bottom-auto md:left-auto rounded-t-3xl md:rounded-none shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:shadow-none`}
+      ref={asideRef}
+      className={`${inter.className} w-full flex-shrink-0 md:border-r border-[#e5e7eb] bg-white flex flex-col overflow-hidden z-10 absolute md:relative bottom-0 left-0 md:bottom-auto md:left-auto rounded-t-3xl md:rounded-none shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:shadow-none`}
       style={isMobile ? { 
         height: `${sheetHeight}%`, 
         transition: isDragging ? 'none' : 'height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' 
-      } : undefined}
+      } : { width: `${panelWidth}px` }}
     >
+      {!isMobile && (
+        <div 
+          onMouseDown={onDesktopDragStart}
+          className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-gray-300 z-50 transition-colors"
+        />
+      )}
       {/* Drag Handle for Mobile */}
       <div 
         className="w-full flex justify-center items-center pt-3 pb-2 cursor-grab active:cursor-grabbing flex-shrink-0 touch-none md:hidden bg-white z-20 sticky top-0"
@@ -319,6 +366,31 @@ export default function BlindBoxPanel({
         >
           {isGenerating ? "⏳ Đang lắc hộp..." : "🎲 Tạo hộp mù"}
         </button>
+
+        <button
+          onClick={() => setShowGroupRoom((prev) => !prev)}
+          style={{
+            width: "100%",
+            marginTop: "0.75rem",
+            padding: "0.875rem",
+            borderRadius: "12px",
+            border: "1px solid #d1d5db",
+            background: "#ffffff",
+            color: "#111827",
+            fontSize: "1rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+          }}
+        >
+          {showGroupRoom ? "✖ Đóng tạo phòng" : "👥 Tạo phòng nhóm"}
+        </button>
+
+        {showGroupRoom && (
+          <div style={{ marginTop: "0.75rem" }}>
+            <GroupRoom embedded />
+          </div>
+        )}
 
         {/* ── RESULT READY (Blind Box) ── */}
         {result && (
