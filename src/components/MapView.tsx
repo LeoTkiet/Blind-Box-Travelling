@@ -32,11 +32,16 @@ export default function MapView({ userLocation, radius, result }: Props) {
 
     const init = async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
+      const container = containerRef.current;
+      if (!container) return;
+
+      // Keep container empty before Mapbox initialization (helps avoid dev/HMR warnings).
+      container.replaceChildren();
 
       mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
       const map = new mapboxgl.Map({
-        container: containerRef.current!,
+        container,
         style: "mapbox://styles/mapbox/streets-v12",
         center: DEFAULT_CENTER,
         zoom: 12,

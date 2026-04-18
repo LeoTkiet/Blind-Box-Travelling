@@ -1,15 +1,10 @@
 'use client'; 
 
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/utils/supabase/client';
 //1. KHỞI TẠO SUPABASE CLIENT
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase =
-  supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey)
-    : null;
+const supabase = createClient();
 
 export default function GroupRoom({ embedded = false }) {
   // --- STATE MANAGEMENT  ---
