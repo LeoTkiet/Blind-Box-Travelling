@@ -7,13 +7,32 @@ import GroupRoom from "./GroupTravel";
 
 const inter = Inter({ subsets: ["latin", "vietnamese"], display: "swap" });
 
+// ── 23 CATEGORIES (matching enricher.js VALID_CATEGORIES) ──
 const CATEGORIES = [
   { value: "all", label: "Tất cả", icon: "🎲" },
   { value: "restaurant", label: "Nhà hàng", icon: "🍽️" },
   { value: "cafe", label: "Cà phê", icon: "☕" },
+  { value: "bar/pub", label: "Bar & Pub", icon: "🍺" },
+  { value: "bakery", label: "Tiệm bánh", icon: "🧁" },
+  { value: "hotel", label: "Khách sạn", icon: "🏨" },
+  { value: "hostel", label: "Hostel", icon: "🛏️" },
+  { value: "homestay", label: "Homestay", icon: "🏡" },
   { value: "attraction", label: "Tham quan", icon: "📸" },
   { value: "museum", label: "Bảo tàng", icon: "🏛️" },
-  { value: "ruins", label: "Di tích", icon: "🏺" },
+  { value: "pagoda/temple", label: "Chùa & Đền", icon: "🛕" },
+  { value: "park", label: "Công viên", icon: "🌳" },
+  { value: "market", label: "Chợ", icon: "🏪" },
+  { value: "shopping_mall", label: "TTTM", icon: "🛍️" },
+  { value: "souvenir_shop", label: "Quà lưu niệm", icon: "🎁" },
+  { value: "entertainment", label: "Giải trí", icon: "🎭" },
+  { value: "spa/wellness", label: "Spa", icon: "💆" },
+  { value: "sports", label: "Thể thao", icon: "⚽" },
+  { value: "theme_park", label: "Công viên giải trí", icon: "🎢" },
+  { value: "beach", label: "Biển", icon: "🏖️" },
+  { value: "viewpoint", label: "Ngắm cảnh", icon: "🌄" },
+  { value: "nature", label: "Thiên nhiên", icon: "🌿" },
+  { value: "transport_hub", label: "Bến xe/Ga", icon: "🚉" },
+  { value: "event_venue", label: "Sự kiện", icon: "🎪" },
 ];
 
 interface Suggestion { id: string; place_name: string; center: [number, number]; }
@@ -23,10 +42,11 @@ interface Props {
   setUserLocation: (loc: UserLocation | null) => void;
   radius: number; setRadius: (r: number) => void;
   category: string; setCategory: (c: string) => void;
-  onGenerate: () => void;
+  onGenerate: (query: string, selectedTags: string[]) => void;
   result: LocationResult | null;
   isGenerating: boolean;
   error: string | null;
+  relaxLevel?: number; // 0 = exact, >0 = nới lỏng tiêu chí
 }
 
 const sectionLabel: React.CSSProperties = {
@@ -47,6 +67,7 @@ export default function BlindBoxPanel({
   userLocation, setUserLocation,
   radius, setRadius, category, setCategory,
   onGenerate, result, isGenerating, error,
+  relaxLevel,
 }: Props) {
   const [mode, setMode] = useState<"gps" | "address">("gps");
   const [addressInput, setAddressInput] = useState("");
@@ -54,9 +75,16 @@ export default function BlindBoxPanel({
   const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Smart Input (Magic Bar) state
+  const [smartQuery, setSmartQuery] = useState("");
+  const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
+
   // State to manage name visibility (Unlock)
   const [isRevealed, setIsRevealed] = useState(false);
   const [showGroupRoom, setShowGroupRoom] = useState(false);
+
+  // Fallback tooltip
+  const [showRelaxTooltip, setShowRelaxTooltip] = useState(false);
 
   // DRAG SHEET LOGIC
   const [sheetHeight, setSheetHeight] = useState<number>(30); // 30vh
@@ -68,6 +96,9 @@ export default function BlindBoxPanel({
   const [panelWidth, setPanelWidth] = useState<number>(360);
   const desktopDragRef = useRef<{ x: number, w: number, currentW?: number } | null>(null);
   const asideRef = useRef<HTMLElement>(null);
+
+  // Scrollable category ref
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const onDesktopDragStart = (e: React.MouseEvent) => {
     desktopDragRef.current = { x: e.clientX, w: panelWidth };
@@ -187,6 +218,38 @@ export default function BlindBoxPanel({
     setSuggestions([]);
   };
 
+  // ── Sync category from badge (avoids setState-during-render warning) ──
+  useEffect(() => {
+    setCategory(selectedBadges.length > 0 ? selectedBadges[0] : "all");
+  }, [selectedBadges, setCategory]);
+
+  // ── Badge Logic (single-select) ──
+  const toggleBadge = (catValue: string) => {
+    if (catValue === "all") {
+      setSelectedBadges([]);
+      return;
+    }
+    // Single-select: click same → deselect, click different → replace
+    setSelectedBadges((prev) =>
+      prev.includes(catValue) ? [] : [catValue]
+    );
+  };
+
+  // Remove badge chip
+  const removeBadge = () => {
+    setSelectedBadges([]);
+  };
+
+  // ── Dual-Routing Handler ──
+  const handleSmartGenerate = () => {
+    const trimmedQuery = smartQuery.trim();
+    // Pass query and selectedBadges to parent — parent decides API routing
+    onGenerate(trimmedQuery, selectedBadges);
+  };
+
+  // Determine if we're in "smart mode" (text query present)
+  const isSmartMode = smartQuery.trim().length > 0;
+
   return (
     <aside 
       ref={asideRef}
@@ -296,30 +359,121 @@ export default function BlindBoxPanel({
           )}
         </section>
 
-        {/* ── COLLECTION ── */}
+        {/* ── SMART INPUT (MAGIC BAR) ── */}
+        <section style={{ marginBottom: "1.25rem" }}>
+          <p style={sectionLabel}>🪄 Tìm kiếm thông minh</p>
+          <div style={{
+            border: "1px solid #e5e7eb", borderRadius: "12px",
+            padding: "8px 10px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px",
+            background: "#fafbfc", minHeight: "44px",
+            transition: "border-color 0.2s, box-shadow 0.2s",
+          }}
+          onFocus={(e) => {
+            const target = e.currentTarget;
+            target.style.borderColor = "#6366f1";
+            target.style.boxShadow = "0 0 0 3px rgba(99,102,241,0.1)";
+          }}
+          onBlur={(e) => {
+            const target = e.currentTarget;
+            target.style.borderColor = "#e5e7eb";
+            target.style.boxShadow = "none";
+          }}
+          >
+            {/* Badge chips */}
+            {selectedBadges.map((badge) => {
+              const cat = CATEGORIES.find((c) => c.value === badge);
+              return (
+                <span key={badge} style={{
+                  display: "inline-flex", alignItems: "center", gap: "4px",
+                  background: "#eef2ff", border: "1px solid #c7d2fe",
+                  borderRadius: "20px", padding: "3px 10px 3px 8px",
+                  fontSize: "0.8rem", fontWeight: 600, color: "#4338ca",
+                  whiteSpace: "nowrap", animation: "badgeIn 0.2s ease",
+                }}>
+                  <span>{cat?.icon}</span>
+                  <span>{cat?.label}</span>
+                  <button
+                    onClick={removeBadge}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      color: "#818cf8", fontSize: "14px", lineHeight: 1,
+                      padding: "0 0 0 2px", display: "flex", alignItems: "center",
+                    }}
+                    aria-label={`Xóa ${cat?.label}`}
+                  >✕</button>
+                </span>
+              );
+            })}
+            {/* Text input */}
+            <input
+              id="smart-search-input"
+              value={smartQuery}
+              onChange={(e) => setSmartQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSmartGenerate(); }}
+              placeholder={selectedBadges.length > 0 ? "Gõ thêm yêu cầu... (VD: view sông, giá rẻ)" : "VD: quán cà phê yên tĩnh cho cặp đôi, giá bình dân..."}
+              style={{
+                flex: 1, minWidth: "120px", flexBasis: "100%", border: "none", outline: "none",
+                background: "transparent", fontSize: "0.875rem", color: "#111827",
+                padding: "4px 0",
+              }}
+            />
+          </div>
+          <p style={{ margin: "0.375rem 0 0", fontSize: "0.7rem", color: "#9ca3af", lineHeight: "1.4" }}>
+            {isSmartMode
+              ? "🧠 Chế độ AI — Hệ thống sẽ phân tích yêu cầu và tìm kiếm ngữ nghĩa"
+              : "📦 Chế độ Hộp mù — Bốc ngẫu nhiên theo thể loại đã chọn"}
+          </p>
+        </section>
+
+        {/* ── SCROLLABLE 2x2 COLLECTION ── */}
         <section style={{ marginBottom: "1.25rem" }}>
           <p style={sectionLabel}>Chọn Bộ Sưu Tập</p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-            {CATEGORIES.map((item) => (
-              <button 
-                key={item.value} 
-                onClick={() => setCategory(item.value)}
-                style={{
-                  padding: "12px", 
-                  borderRadius: "12px",
-                  border: category === item.value ? "2px solid #111827" : "1px solid #e5e7eb",
-                  // Đổi màu ô đã chọn thành xám nhạt thay vì tím nhạt
-                  background: category === item.value ? "#f3f4f6" : "#fff",
-                  cursor: "pointer", 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "8px",
-                  transition: "all 0.2s ease"
-                }}>
-                <span style={{ fontSize: "1.3rem" }}>{item.icon}</span>
-                <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "#374151" }}>{item.label}</span>
-              </button>
-            ))}
+          <div
+            ref={scrollRef}
+            style={{
+              display: "grid",
+              gridTemplateRows: "repeat(2, auto)",
+              gridAutoFlow: "column",
+              gridAutoColumns: "max-content",
+              gap: "8px",
+              overflowX: "auto",
+              overflowY: "hidden",
+              paddingBottom: "8px",
+              scrollbarWidth: "thin",
+              scrollbarColor: "#d1d5db transparent",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {CATEGORIES.map((item) => {
+              const isActive = item.value === "all"
+                ? selectedBadges.length === 0
+                : selectedBadges.includes(item.value);
+              return (
+                <button
+                  key={item.value}
+                  id={`cat-btn-${item.value}`}
+                  onClick={() => toggleBadge(item.value)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: "10px",
+                    border: isActive ? "2px solid #4338ca" : "1px solid #e5e7eb",
+                    background: isActive ? "#eef2ff" : "#fff",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    transition: "all 0.2s ease",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <span style={{ fontSize: "1.15rem" }}>{item.icon}</span>
+                  <span style={{
+                    fontSize: "0.8rem", fontWeight: 600,
+                    color: isActive ? "#4338ca" : "#374151",
+                  }}>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -329,7 +483,7 @@ export default function BlindBoxPanel({
             <span>Khoảng cách</span>
             <span style={{ fontWeight: 800, color: "#111827" }}>{radius} KM</span>
           </p>
-          <input type="range" min={1} max={25} step={1} value={radius}
+          <input type="range" min={1} max={100} step={1} value={radius}
             onChange={(e) => setRadius(Number(e.target.value))}
             style={{ width: "100%", accentColor: "#111827", cursor: "pointer", height: "6px" }}
           />
@@ -338,7 +492,7 @@ export default function BlindBoxPanel({
               <span style={{color: "#eab308"}}></span> 1km
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#ef4444"}}></span> 25km
+              <span style={{color: "#ef4444"}}></span> 100km
             </span>
           </div>
         </section>
@@ -349,22 +503,36 @@ export default function BlindBoxPanel({
             {error}
           </div>
         )}
-        <button onClick={onGenerate} disabled={isGenerating || !userLocation}
+        <button
+          id="generate-blind-box"
+          onClick={handleSmartGenerate}
+          disabled={isGenerating || !userLocation}
           style={{
             width: "100%", padding: "0.875rem", borderRadius: "12px",
-            border: "none", 
-            // Đổi màu gradient tím thành màu đen tuyền nguyên khối
-            background: isGenerating || !userLocation ? "#e2e8f0" : "#111827",
+            border: "none",
+            background: isGenerating || !userLocation
+              ? "#e2e8f0"
+              : isSmartMode
+                ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+                : "#111827",
             color: isGenerating || !userLocation ? "#94a3b8" : "#fff",
-            fontSize: "1rem", fontWeight: 700, cursor: !userLocation || isGenerating ? "not-allowed" : "pointer",
+            fontSize: "1rem", fontWeight: 700,
+            cursor: !userLocation || isGenerating ? "not-allowed" : "pointer",
             transition: "all 0.2s ease",
-            // Đổi bóng đổ (shadow) thành màu xám/đen
-            boxShadow: isGenerating || !userLocation ? "none" : "0 4px 12px rgba(17, 24, 39, 0.25)"
+            boxShadow: isGenerating || !userLocation
+              ? "none"
+              : isSmartMode
+                ? "0 4px 16px rgba(99,102,241,0.35)"
+                : "0 4px 12px rgba(17, 24, 39, 0.25)",
           }}
           onMouseDown={(e) => { if(!isGenerating && userLocation) e.currentTarget.style.transform = "scale(0.97)" }}
           onMouseUp={(e) => e.currentTarget.style.transform = "scale(1)"}
         >
-          {isGenerating ? "⏳ Đang lắc hộp..." : "🎲 Tạo hộp mù"}
+          {isGenerating
+            ? "⏳ Đang tìm kiếm..."
+            : isSmartMode
+              ? "🧠 Tìm kiếm thông minh"
+              : "🎲 Lắc hộp mù"}
         </button>
 
         <button
@@ -444,6 +612,43 @@ export default function BlindBoxPanel({
                   
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8125rem", flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 600, color: "#eab308" }}>⭐ {result.rating?.toFixed(1)}</span>
+
+                    {/* Fallback Warning Mini Pill */}
+                    {typeof relaxLevel === "number" && relaxLevel > 0 && (
+                      <span style={{ position: "relative", display: "inline-flex" }}>
+                        <button
+                          onClick={() => setShowRelaxTooltip((v) => !v)}
+                          style={{
+                            background: "#fef3c7", border: "1px solid #fcd34d",
+                            borderRadius: "12px", padding: "1px 8px",
+                            fontSize: "0.7rem", fontWeight: 600, color: "#92400e",
+                            cursor: "pointer", lineHeight: "1.6",
+                          }}
+                        >
+                          ⚠️ Mở rộng tiêu chí
+                        </button>
+                        {showRelaxTooltip && (
+                          <div style={{
+                            position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
+                            transform: "translateX(-50%)", width: "200px",
+                            background: "#1e293b", color: "#f1f5f9",
+                            borderRadius: "8px", padding: "8px 10px",
+                            fontSize: "0.7rem", lineHeight: "1.5",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                            zIndex: 30, textAlign: "center",
+                            animation: "fadeIn 0.2s ease",
+                          }}>
+                            Kết quả chính xác quá ít nên hệ thống đã nới lỏng {relaxLevel} cấp tiêu chí lọc để tìm được địa điểm phù hợp nhất.
+                            <div style={{
+                              position: "absolute", bottom: "-4px", left: "50%",
+                              transform: "translateX(-50%) rotate(45deg)",
+                              width: "8px", height: "8px", background: "#1e293b",
+                            }} />
+                          </div>
+                        )}
+                      </span>
+                    )}
+
                     <span style={{ color: "#cbd5e1" }}>|</span>
                     <span style={{ color: "#64748b" }}>{result.reviews_count} đánh giá</span>
                     <span style={{ color: "#cbd5e1" }}>|</span>
@@ -459,6 +664,29 @@ export default function BlindBoxPanel({
           </div>
         )}
       </div>
+
+      {/* Inline CSS for animations */}
+      <style>{`
+        @keyframes badgeIn {
+          from { transform: scale(0.8); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        /* Custom scrollbar for the category grid */
+        div::-webkit-scrollbar {
+          height: 4px;
+        }
+        div::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        div::-webkit-scrollbar-thumb {
+          background: #d1d5db;
+          border-radius: 4px;
+        }
+      `}</style>
     </aside>
   );
 }

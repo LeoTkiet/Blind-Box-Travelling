@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import BlindBoxPanel from "./BlindBoxPanel";
 import MapView from "./MapView";
 import ChatBox from "./ChatBox";
@@ -32,32 +32,90 @@ export default function AppContent() {
   const [aiPayload, setAiPayload] = useState<AIGeneratedContent | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [relaxLevel, setRelaxLevel] = useState<number>(0);
 
-  const handleGenerate = useCallback(async () => {
+  // ── Dual-Routing Handler ──
+  // query: text from Magic Bar, selectedTags: badges selected
+  const handleGenerate = useCallback(async (query: string, selectedTags: string[]) => {
     if (!userLocation) { setError("Vui lòng chọn vị trí trước."); return; }
     setIsGenerating(true);
     setError(null);
     setResult(null);
     setAiPayload(null);
-    try {
-      const res = await fetch("/api/blind-box", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat: userLocation.lat, lng: userLocation.lng, radius, category }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Không tìm thấy địa điểm.");
-      setResult(data.location);
+    setRelaxLevel(0);
 
-      // Sau khi có địa điểm, gọi AI Server Action
-      const aiRes = await getBlindBoxAI(data.location);
-      setAiPayload(aiRes);
+    try {
+      const hasTextQuery = query.trim().length > 0;
+
+      if (hasTextQuery) {
+        // ── CASE 1: Smart Search (AI multi-tier) ──
+        const res = await fetch("/api/smart-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            selectedTags,
+            lat: userLocation.lat,
+            lng: userLocation.lng,
+            radius,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Không tìm thấy địa điểm.");
+        setResult(data.location);
+        setRelaxLevel(data.relaxLevel ?? 0);
+      } else {
+        // ── CASE 2: Classic Blind-Box (fast column filter) ──
+        // Use first selectedTag as category, fallback to current category state
+        const effectiveCategory = selectedTags.length > 0 ? selectedTags[0] : category;
+        const res = await fetch("/api/blind-box", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lat: userLocation.lat,
+            lng: userLocation.lng,
+            radius,
+            category: effectiveCategory,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Không tìm thấy địa điểm.");
+        setResult(data.location);
+        setRelaxLevel(0);
+      }
+
+      // Sau khi có địa điểm, gọi AI Server Action (cho cả 2 luồng)
+      // Lấy result mới nhất từ state setter callback
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Có lỗi xảy ra.");
     } finally {
       setIsGenerating(false);
     }
   }, [userLocation, radius, category]);
+
+  // Gọi AI content khi result thay đổi
+  const prevResultRef = useRef<LocationResult | null>(null);
+  useEffect(() => {
+    if (!result || result === prevResultRef.current) return;
+    prevResultRef.current = result;
+    (async () => {
+      try {
+        const aiRes = await getBlindBoxAI({
+          id: "",
+          name: result.name,
+          category: result.category,
+          lat: result.lat,
+          lng: result.lng,
+          rating: result.rating,
+          reviews_count: result.reviews_count,
+          tags: [result.category],
+        });
+        setAiPayload(aiRes);
+      } catch {
+        console.warn("AI content generation failed");
+      }
+    })();
+  }, [result]);
 
   return (
     <div className="flex flex-col md:flex-row flex-1 w-full overflow-hidden relative bg-[#f1f5f9]">
@@ -67,6 +125,7 @@ export default function AppContent() {
         category={category} setCategory={setCategory}
         onGenerate={handleGenerate}
         result={result} isGenerating={isGenerating} error={error}
+        relaxLevel={relaxLevel}
       />
       {/* MapView container */}
       <div className="absolute inset-0 md:relative md:flex-1 md:order-2 z-0">
