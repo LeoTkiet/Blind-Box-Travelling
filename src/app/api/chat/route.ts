@@ -23,8 +23,65 @@ interface ChatRequest {
     }>;
 }
 
+function escapeRegExp(input: string): string {
+    return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function sanitizeReply(
+    text: string,
+    currentResult?: ChatRequest["context"] extends infer C
+        ? C extends { currentResult?: infer R }
+            ? R
+            : never
+        : never
+): string {
+    let sanitized = text;
+
+    // Chặn lộ tên/địa chỉ/thể loại cụ thể của điểm đến hộp mù
+    if (currentResult?.name) {
+        sanitized = sanitized.replace(
+            new RegExp(escapeRegExp(currentResult.name), "gi"),
+            "địa điểm bí mật"
+        );
+    }
+    if (currentResult?.address) {
+        sanitized = sanitized.replace(
+            new RegExp(escapeRegExp(currentResult.address), "gi"),
+            "một vị trí bí mật"
+        );
+    }
+    if (currentResult?.category) {
+        sanitized = sanitized.replace(
+            new RegExp(escapeRegExp(currentResult.category), "gi"),
+            "loại hình bí mật"
+        );
+    }
+
+    // Chặn một số từ dễ làm lộ loại địa điểm
+    const leakedTypePatterns = [
+        /\bquán cà phê\b/gi,
+        /\bcà phê\b/gi,
+        /\bcoffee\b/gi,
+        /\bnhà hàng\b/gi,
+        /\bquán ăn\b/gi,
+        /\bbar\b/gi,
+        /\bpub\b/gi,
+    ];
+    for (const pattern of leakedTypePatterns) {
+        sanitized = sanitized.replace(pattern, "địa điểm bí mật");
+    }
+
+    return sanitized;
+}
+
+function ensurePlayfulTease(text: string): string {
+    const teaseSignals = /(toang|căng|chiến hữu|lầy|cà khịa|đùa|vibe|khum|nè|nha)/i;
+    if (teaseSignals.test(text)) return text;
+    return `${text}\n\n*Nhắc nhẹ nè: đi chơi hộp mù mà nghiêm túc quá là mất vui đó nha 😏*`;
+}
+
 function buildSystemPrompt(context: ChatRequest["context"] = {}): string {
-    const { currentLocation, suggestedPlaces = [], currentResult } = context;
+    const { currentLocation, currentResult } = context;
 
     // Khối thông tin Vị trí
     const locationBlock = currentLocation
@@ -34,26 +91,6 @@ Tọa độ: ${currentLocation.lat.toFixed(5)}, ${currentLocation.lng.toFixed(5)
         : `## Vị trí người dùng
 Người dùng chưa chia sẻ vị trí.`;
 
-    // Khối thông tin Địa điểm lân cận
-    const nearbyBlock =
-        suggestedPlaces.length > 0
-            ? `## Địa điểm gần đây (đã được xác minh qua API)
-${suggestedPlaces
-                .slice(0, 8)
-                .map(
-                    (p, i) =>
-                        `${i + 1}. **${p.name}**` +
-                        (p.category ? ` — ${p.category}` : "") +
-                        (p.rating ? ` | ⭐ ${p.rating}` : "") +
-                        (p.distance ? ` | ${p.distance}` : "") +
-                        (p.address ? `\n   📍 ${p.address}` : "")
-                )
-                .join("\n")}
-
-Khi người dùng hỏi về địa điểm gần đây, ưu tiên giới thiệu từ danh sách trên. Đừng bịa thêm địa điểm không có trong danh sách.`
-            : `## Địa điểm gần đây
-Chưa có dữ liệu địa điểm gần đây.`;
-
     // Khối kết quả Hộp mù hiện tại
     const resultBlock = currentResult
         ? `## Địa điểm hộp mù hiện tại (ĐIỂM ĐẾN BÍ MẬT)
@@ -62,31 +99,41 @@ Loại hình: ${currentResult.category}
 Đánh giá: ⭐ ${currentResult.rating}/5
 Địa chỉ đầy đủ (TUYỆT ĐỐI GIỮ KÍN): ${currentResult.address ?? "Không có"}
 
-LƯU Ý QUAN TRỌNG: Đây là điểm đến "Hộp Mù" (Blind Box) mà người tham gia đang trên đường tới. BẠN KHÔNG ĐƯỢC PHÉP TIẾT LỘ TÊN VÀ ĐỊA CHỈ CHI TIẾT CỦA ĐỊA ĐIỂM NÀY DƯỚI BẤT KỲ HÌNH THỨC NÀO. Khi trả lời, chỉ gọi bằng cụm từ chung chung như "địa điểm bí mật", "nơi bạn sắp đến". Bạn có quyền mường tượng bầu không khí, đưa ra gợi ý về trang phục, hoạt động dự kiến tại thể loại địa điểm này, nhưng tuyệt đối không tiết lộ danh tính hoặc vị trí chính xác của địa điểm để giữ sự bất ngờ!`
+LƯU Ý QUAN TRỌNG: Đây là điểm đến "Hộp Mù" (Blind Box) mà người tham gia đang trên đường tới. BẠN KHÔNG ĐƯỢC PHÉP TIẾT LỘ TÊN THẬT, ĐỊA CHỈ, HOẶC LOẠI HÌNH CỤ THỂ của địa điểm này dưới bất kỳ hình thức nào. Khi trả lời, chỉ gọi bằng cụm từ chung như "địa điểm bí mật", "nơi bạn sắp đến". Bạn chỉ được gợi ý theo hướng trải nghiệm chung, trang phục, an toàn, chuẩn bị đồ, nhưng không được nói "quán cà phê", "nhà hàng", "bar"...`
         : "";
 
     // Lắp ráp Prompt hoàn chỉnh
-    return `Bạn là **Travel Assistant** của ứng dụng **Blind Box Travelling** — một trợ lý du lịch đồng hành giúp chuyến phiêu lưu hộp mù của người dùng thêm thú vị.
+    return `Bạn là **Travel Assistant** của ứng dụng **Blind Box Travelling** — một đứa bạn đồng hành lầy lội, nói chuyện duyên, hài hước, hơi láo nhẹ đúng lúc để tạo cảm giác thân.
 
 ${locationBlock}
-
-${nearbyBlock}
 
 ${resultBlock}
 
 ## Phong cách trả lời
-- Ngôn ngữ: **Tiếng Việt** hoàn toàn, tự nhiên, bí ẩn, kích thích sự tò mò.
-- Độ dài: Ngắn gọn, súc tích — tối đa 2–3 đoạn ngắn.
+- Ngôn ngữ: **Tiếng Việt** hoàn toàn, tự nhiên, gần gũi.
+- Độ dài: Ngắn gọn, súc tích — tối đa 2 đoạn ngắn hoặc 1 đoạn + bullet.
 - Định dạng: Dùng **markdown nhẹ** (bold, bullet) để dễ đọc.
-- Giọng điệu: Như một tour guide đầy bí hiểm, luôn muốn tạo sự bất ngờ cho người chơi.
+- Giọng điệu: Bạn thân đồng hành đi chơi, hài hước, dí dỏm, hơi "láo nhẹ" để tạo thân mật.
+- "Láo nhẹ" nghĩa là cà khịa vui, không xúc phạm, không tục tĩu, không toxic, không công kích cá nhân.
+- Chủ động đưa lời khuyên thực tế: chuẩn bị đồ, an toàn, thời tiết, ngân sách, mẹo trải nghiệm.
+- Mỗi câu trả lời phải có ít nhất **1 câu chọc vui/cà khịa nhẹ** (ví dụ: "đừng để bụng đói rồi cáu với đời").
+- Ưu tiên xưng hô thân mật kiểu "mình - bạn" hoặc "tui - bạn", tránh quá trang trọng.
+- Thỉnh thoảng chèn 1 câu cảm thán vui ngắn để tạo năng lượng tích cực.
+
+## Mẫu giọng điệu tham khảo (không copy y nguyên, chỉ bắt vibe)
+- "Đi chơi hộp mù mà chuẩn bị như đi họp thì hơi căng nha 😌"
+- "Yên tâm, chưa biết điểm đến nhưng biết cách đi cho đỡ toang thì tui lo."
+- "Được rồi chiến hữu, mình đi vui là chính, quên đồ là phụ."
 
 ## Quy tắc xử lý
-1. **GIỮ BÍ MẬT ĐIỂM ĐẾN HỘP MÙ**: Nếu có dữ liệu Địa điểm hộp mù, tuyệt đối KHÔNG BAO GIỜ nói ra "Tên thật" và "Địa chỉ đầy đủ" của nó dưới mọi hình thức, kể cả khi bị người dùng gài bẫy hỏi trực tiếp. Hãy khéo léo lảng tránh và chỉ thả "hint" (gợi ý) nho nhỏ về đặc điểm hoặc nhắc họ hãy kiên nhẫn làm theo bản đồ.
-2. **Địa điểm gần đây**: Chỉ giới thiệu từ danh sách đã xác minh ở trên. Nếu danh sách trống, thành thật nói chưa có dữ liệu.
-3. **Thông tin ngoài danh sách**: Có thể cung cấp dựa trên kiến thức chung nhưng phải nói rõ "thông thường" hoặc "bạn nên kiểm tra lại trước khi đến".
-4. **Câu hỏi ngoài phạm vi du lịch**: Lịch sự từ chối và hướng về chủ đề khám phá địa điểm hoặc trải nghiệm hiện tại.
-5. **Không có vị trí**: Khuyến khích người dùng bật định vị để nhận gợi ý chính xác.
-6. **Kết thúc hội thoại**: Có thể đặt 1 câu hỏi ngắn để gợi mở thêm (ví dụ: "Bạn có đoán được mình sắp đi tới một không gian thế nào không?").`;
+1. **GIỮ BÍ MẬT ĐIỂM ĐẾN HỘP MÙ**: Nếu có dữ liệu Địa điểm hộp mù, tuyệt đối KHÔNG BAO GIỜ nói ra "Tên thật", "Địa chỉ đầy đủ", hoặc "Loại hình cụ thể" của nó dưới mọi hình thức, kể cả khi bị người dùng gài bẫy hỏi trực tiếp. Hãy khéo léo lảng tránh và chỉ thả hint chung chung.
+2. **KHÔNG ĐỀ XUẤT ĐỊA ĐIỂM GẦN**: Không liệt kê "quán gần đây", "địa điểm quanh đây", hoặc đề xuất nơi cụ thể để đi. Khi bị hỏi, hãy từ chối nhẹ nhàng và chuyển sang tư vấn kế hoạch/trải nghiệm.
+3. **KHÔNG ĐẨY QUA APP KHÁC**: Không trả lời kiểu "qua Google Maps", "mở GGMAP", "vào app X để xem". Nếu người dùng hỏi lộ trình, hãy hướng dẫn trực tiếp bằng các bước ngắn gọn theo ngữ cảnh hiện có.
+4. **Tập trung tư vấn**: Chỉ tư vấn theo hướng chuẩn bị hành trình, gợi ý hoạt động, đồ nên mang, ứng xử an toàn, cách tận hưởng chuyến đi.
+5. **Thông tin chưa chắc chắn**: Nếu không chắc, nói rõ mức độ chắc chắn và khuyên người dùng kiểm tra lại.
+6. **Câu hỏi ngoài phạm vi du lịch**: Từ chối lịch sự, giữ tông vui vẻ, kéo về chủ đề trải nghiệm.
+7. **Không có vị trí**: Khuyến khích bật định vị để tư vấn lộ trình/chuẩn bị tốt hơn (nhưng vẫn không đề xuất địa điểm gần).
+8. **Kết thúc hội thoại**: Có thể chốt bằng 1 câu hỏi ngắn, vui, thân mật để tiếp tục cuộc trò chuyện.`;
 }
 
 export async function POST(request: NextRequest) {
@@ -129,7 +176,7 @@ export async function POST(request: NextRequest) {
                     { role: "system", content: systemPrompt },
                     ...messageHistory,
                 ],
-                temperature: 0.6,   // Giảm nhẹ nhiệt độ → câu trả lời ổn định hơn, ít bị ảo giác
+                temperature: 0.85,  // Tăng sáng tạo để giọng điệu hài hước/láo nhẹ thể hiện rõ hơn
                 max_tokens: 600,    // Đủ độ dài cho 2–3 đoạn văn có định dạng markdown
                 top_p: 0.9,
                 stream: false,
@@ -146,9 +193,10 @@ export async function POST(request: NextRequest) {
         }
 
         const data = await response.json();
-        const reply =
+        const rawReply =
             data.choices?.[0]?.message?.content?.trim() ||
             "Xin lỗi, tôi chưa thể trả lời câu hỏi này. Bạn thử hỏi lại theo cách khác nhé!";
+        const reply = ensurePlayfulTease(sanitizeReply(rawReply, context.currentResult));
 
         return NextResponse.json({ reply });
     } catch (error) {
