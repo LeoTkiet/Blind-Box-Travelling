@@ -483,13 +483,13 @@ export default function BlindBoxPanel({
             <span>Khoảng cách</span>
             <span style={{ fontWeight: 800, color: "#111827" }}>{radius} KM</span>
           </p>
-          <input type="range" min={1} max={100} step={1} value={radius}
+          <input type="range" min={0.5} max={100} step={0.5} value={radius}
             onChange={(e) => setRadius(Number(e.target.value))}
             style={{ width: "100%", accentColor: "#111827", cursor: "pointer", height: "6px" }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem", fontWeight: 500 }}>
             <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#eab308"}}></span> 1km
+              <span style={{color: "#eab308"}}></span> 500m
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               <span style={{color: "#ef4444"}}></span> 100km
