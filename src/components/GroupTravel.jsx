@@ -1,19 +1,20 @@
 'use client'; 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-//1. KHỞI TẠO SUPABASE CLIENT
 
 const supabase = createClient();
 
 export default function GroupRoom({ embedded = false }) {
-  // --- STATE MANAGEMENT  ---
-  const [userId, setUserId] = useState(null); // Lưu ID ẩn danh
-  const [roomCode, setRoomCode] = useState(''); // Mã phòng hiện tại
-  const [inputCode, setInputCode] = useState(''); // Mã người dùng nhập vào ô text
-  const [members, setMembers] = useState([]); // Mảng chứa danh sách thành viên
+  const [userId, setUserId] = useState(null); 
+  const [roomCode, setRoomCode] = useState(''); 
+  const [inputCode, setInputCode] = useState(''); 
+  const [members, setMembers] = useState([]); 
+  const [onlineCount, setOnlineCount] = useState(0); 
+  const [openedUsers, setOpenedUsers] = useState({}); 
+  const channelRef = useRef(null);
 
-  // --- 1.1: ĐĂNG NHẬP ẨN DANH NGAY KHI MỞ TRANG ---
+  
  
   useEffect(() => {
     if (!supabase) return;
@@ -23,16 +24,15 @@ export default function GroupRoom({ embedded = false }) {
       if (error) {
         console.error('Lỗi đăng nhập ẩn danh:', error.message);
       } else if (data?.user) {
-        // Lưu lại ID của user để vào phòng
+        
         setUserId(data.user.id); 
       }
     };
     loginAnonymously();
   }, []);
 
-  // --- TẠO MÃ PHÒNG NGẪU NHIÊN ---
+  
   const handleCreateRoom = () => {
-    // Sinh chuỗi ngẫu nhiên 5 ký tự 
     const newCode = Math.random().toString(36).substring(2, 7).toUpperCase();
     setRoomCode(newCode);
   };
@@ -47,7 +47,31 @@ export default function GroupRoom({ embedded = false }) {
     }
   };
 
-  // --- 2: KẾT NỐI REALTIME  ---
+  const handleOpenBlindBox = async () => {
+    if (!channelRef.current || !userId) return;
+
+    const openedAt = new Date().toISOString();
+
+    // Cập nhật UI local ngay lập tức 
+    setOpenedUsers((prev) => ({ ...prev, [userId]: openedAt }));
+
+    await channelRef.current.track({
+      user_id: userId,
+      joined_at: new Date().toLocaleTimeString(),
+      status: 'Đã mở hộp',
+    });
+
+    await channelRef.current.send({
+      type: 'broadcast',
+      event: 'blind_box_opened',
+      payload: {
+        user_id: userId,
+        opened_at: openedAt,
+      },
+    });
+  };
+
+  //  KẾT NỐI REALTIME 
   useEffect(() => {
    
     if (!roomCode || !userId || !supabase) return;
@@ -55,16 +79,48 @@ export default function GroupRoom({ embedded = false }) {
     
     const roomChannel = supabase.channel(`room_${roomCode}`, {
       config: {
-        presence: { key: userId }, // Định danh tôi là ai trong phòng
+        presence: { key: userId }, 
       },
     });
 
+    channelRef.current = roomChannel;
+
    
     roomChannel.on('presence', { event: 'sync' }, () => {
-      const state = roomChannel.presenceState();
-      // Chuyển mảng object phức tạp thành mảng đơn giản để render UI
-      const currentMembers = Object.keys(state).map((key) => state[key][0]);
+      const presenceState = roomChannel.presenceState();
+      const onlineUsers = Object.keys(presenceState).length;
+      setOnlineCount(onlineUsers);
+
+      const currentMembers = Object.entries(presenceState).map(([presenceKey, metas]) => {
+        const latestMeta = metas?.[metas.length - 1] ?? {};
+        return {
+          user_id: latestMeta.user_id || presenceKey,
+          joined_at: latestMeta.joined_at,
+          status: latestMeta.status || 'Đang chờ...',
+        };
+      });
+
       setMembers(currentMembers);
+    });
+
+    roomChannel.on('broadcast', { event: 'blind_box_opened' }, ({ payload }) => {
+      const openedUserId = payload?.user_id;
+      const openedAt = payload?.opened_at;
+
+      if (!openedUserId) return;
+
+      setOpenedUsers((prev) => ({
+        ...prev,
+        [openedUserId]: openedAt || new Date().toISOString(),
+      }));
+
+      setMembers((prevMembers) =>
+        prevMembers.map((member) =>
+          member.user_id === openedUserId
+            ? { ...member, status: 'Đã mở hộp' }
+            : member
+        )
+      );
     });
 
     
@@ -79,14 +135,17 @@ export default function GroupRoom({ embedded = false }) {
       }
     });
 
-    // CLEANUP FUNCTION (Giống hàm Hủy - Destructor trong C++)
+    // CLEANUP FUNCTION 
     
     return () => {
-      supabase.removeChannel(roomChannel); // Hủy lắng nghe, giải phóng bộ nhớ!
+      channelRef.current = null;
+      setOnlineCount(0);
+      setOpenedUsers({});
+      supabase.removeChannel(roomChannel); 
     };
   }, [roomCode, userId]); 
 
-  // --- GIAO DIỆN (UI) ---
+  // UI
   return (
     <div className={`${embedded ? 'bg-gray-50 py-4 px-0' : 'min-h-screen bg-gray-50 py-10 px-4'} flex flex-col items-center font-sans`}>
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6">
@@ -143,7 +202,7 @@ export default function GroupRoom({ embedded = false }) {
 
             <div>
               <div className="flex justify-between items-center mb-3">
-                <h3 className="font-bold text-gray-700">Thành viên ({members.length}/4)</h3>
+                <h3 className="font-bold text-gray-700">Thành viên ({onlineCount}/4)</h3>
                 <span className="flex h-3 w-3 relative">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
@@ -162,15 +221,28 @@ export default function GroupRoom({ embedded = false }) {
                       </span>
                     </div>
                     <span className="text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                      {member.status}
+                      {openedUsers[member.user_id] ? 'Đã mở hộp' : member.status}
                     </span>
                   </li>
                 ))}
               </ul>
             </div>
 
+            <button
+              onClick={handleOpenBlindBox}
+              disabled={Boolean(openedUsers[userId])}
+              className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition duration-200 shadow-md"
+            >
+              {openedUsers[userId] ? '🎁 Bạn đã mở hộp' : '🎁 Mở hộp ngay'}
+            </button>
+
             <button 
-              onClick={() => setRoomCode('')}
+              onClick={() => {
+                setRoomCode('');
+                setMembers([]);
+                setOnlineCount(0);
+                setOpenedUsers({});
+              }}
               className="w-full mt-4 text-gray-500 hover:text-red-500 text-sm font-semibold transition"
             >
               ← Thoát phòng
