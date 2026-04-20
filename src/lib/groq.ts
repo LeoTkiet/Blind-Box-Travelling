@@ -21,8 +21,23 @@ Thông tin thời tiết hiện tại:
 
 Nhiệm vụ:
 1. Viết 1 câu đố vui gồm ĐÚNG 30 từ tiếng Việt, gợi ý về địa điểm mà KHÔNG tiết lộ tên.
-2. Ước tính chi phí trung bình cho 1 người (VND).
-3. Gợi ý 3-5 vật dụng nên mang theo phù hợp với địa điểm VÀ thời tiết.
+2. Ước tính chi phí trung bình cho 1 người (VND), phù hợp với thể loại địa điểm.
+3. Gợi ý 4-6 vật dụng nên mang theo, bắt buộc bám sát THỜI TIẾT + THỂ LOẠI địa điểm.
+
+Yêu cầu chất lượng và ràng buộc:
+- Không được tiết lộ hoặc nhắc trực tiếp tên địa điểm.
+- Không được bịa thông tin không có trong dữ liệu đầu vào.
+- Câu đố phải tự nhiên, dễ hiểu, không lặp từ vô nghĩa, không emoji.
+- estimated_cost phải theo đúng định dạng: "XX.000 - YY.000 VND".
+- items_to_bring phải là các vật dụng cụ thể, ngắn gọn, thực tế (mỗi item tối đa 6 từ), không trùng lặp.
+- Không dùng item chung chung như "đồ cá nhân", "vật dụng cần thiết".
+
+Quy tắc gợi ý vật dụng theo thời tiết (ưu tiên áp dụng):
+- Nếu có mưa/ẩm cao (trạng thái có "mưa" hoặc độ ẩm >= 80): ưu tiên áo mưa, ô gấp, túi chống nước.
+- Nếu nắng gắt/nhiệt độ >= 33 hoặc cảm giác >= 35: ưu tiên mũ, kem chống nắng, nước.
+- Nếu lạnh (nhiệt độ <= 20): thêm áo khoác mỏng.
+- Nếu di chuyển ngoài trời (attraction, park, beach, nature, viewpoint): ưu tiên giày thoải mái, nước, chống nắng/chống mưa.
+- Nếu địa điểm ăn uống (restaurant, cafe, bar/pub, bakery): ưu tiên vật dụng nhẹ gọn, không liệt kê đồ cồng kềnh.
 
 Trả về DUY NHẤT JSON hợp lệ, không có text hay markdown xung quanh:
 {
@@ -51,11 +66,16 @@ export async function generateAIContent(
       model: GROQ_MODEL,
       messages: [
         {
+          role: "system",
+          content:
+            "Bạn là AI assistant chuyên tạo JSON chính xác cho ứng dụng du lịch. Luôn tuân thủ schema, không thêm giải thích ngoài JSON.",
+        },
+        {
           role: "user",
           content: buildPrompt(destination, weather),
         },
       ],
-      temperature: 0.8,
+      temperature: 0.4,
       max_tokens: 1024,
       response_format: { type: "json_object" },
     }),

@@ -141,7 +141,7 @@ function LocationRequestCard({ onRequest, isLoading }: { onRequest: () => void; 
                 </div>
                 <div>
                     <p className="text-[13px] font-semibold text-gray-900">Chia sẻ vị trí</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">Nhận gợi ý địa điểm trong bán kính 5km</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Nhận tư vấn lộ trình và chuẩn bị chuyến đi</p>
                 </div>
             </div>
             <button
@@ -164,7 +164,7 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
         {
             id: "welcome",
             type: "bot",
-            text: "Chào bạn! Tôi là **Travel Assistant** của Blind Box Travelling.\n\nHãy chia sẻ vị trí để tôi gợi ý những địa điểm phù hợp gần bạn.",
+            text: "Chào bạn! Tôi là **Travel Assistant** của Blind Box Travelling.\n\nBật vị trí để tôi tư vấn hành trình, chuẩn bị đồ và mẹo đi chơi hợp vibe của bạn nhé.",
             timestamp: new Date(),
         },
     ]);
@@ -173,7 +173,6 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
     const [isFetchingLocation, setIsFetchingLocation] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
-    const [suggestedPlaces, setSuggestedPlaces] = useState<any[]>([]);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     
     // DESKTOP RESIZE LOGIC
@@ -241,21 +240,14 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
 
             const data: LocationInfo = await res.json();
             setLocationInfo(data);
-            setSuggestedPlaces(data.nearby);
-
-            const topPlaces = data.nearby.slice(0, 4).map((p: any) => p.name);
-            const hasPlaces = topPlaces.length > 0;
 
             setMessages((prev) => [
                 ...prev,
                 {
                     id: `loc-${Date.now()}`,
                     type: "bot",
-                    text: hasPlaces
-                        ? `**Đã xác định vị trí!**\n\n📍 ${data.address}\n\nTôi tìm thấy **${data.nearby.length} địa điểm** thú vị gần đây. Bạn muốn khám phá loại hình nào?`
-                        : `📍 ${data.address}\n\nChưa có gợi ý gần đây. Hãy hỏi tôi bất cứ điều gì bạn muốn khám phá!`,
+                    text: `**Đã xác định vị trí!**\n\n📍 ${data.address}\n\nBạn muốn tôi tư vấn gì trước: đồ nên mang, khung giờ đi đẹp, hay checklist đi chơi cho đỡ quên đồ?`,
                     timestamp: new Date(),
-                    suggestions: hasPlaces ? topPlaces : undefined,
                 },
             ]);
         } catch (err) {
@@ -363,7 +355,6 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
                         context: {
                             userLocation,
                             currentLocation: locationInfo,
-                            suggestedPlaces: suggestedPlaces.slice(0, 5),
                             currentResult: result,
                         },
                         conversationHistory: messages,
@@ -393,7 +384,7 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
                 setIsLoading(false);
             }
         },
-        [isLoading, userLocation, locationInfo, suggestedPlaces, result, messages]
+        [isLoading, userLocation, locationInfo, result, messages]
     );
 
     const handleSubmit = (e: React.FormEvent) => {
