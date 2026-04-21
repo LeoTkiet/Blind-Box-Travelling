@@ -361,7 +361,7 @@ export default function BlindBoxPanel({
 
         {/* ── SMART INPUT (MAGIC BAR) ── */}
         <section style={{ marginBottom: "1.25rem" }}>
-          <p style={sectionLabel}>🪄 Tìm kiếm thông minh</p>
+          <p style={sectionLabel}>Tìm kiếm thông minh</p>
           <div style={{
             border: "1px solid #e5e7eb", borderRadius: "12px",
             padding: "8px 10px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px",
@@ -370,8 +370,8 @@ export default function BlindBoxPanel({
           }}
           onFocus={(e) => {
             const target = e.currentTarget;
-            target.style.borderColor = "#6366f1";
-            target.style.boxShadow = "0 0 0 3px rgba(99,102,241,0.1)";
+            target.style.borderColor = "#111827";
+            target.style.boxShadow = "0 0 0 3px rgba(17, 24, 39, 0.1)";
           }}
           onBlur={(e) => {
             const target = e.currentTarget;
@@ -385,20 +385,22 @@ export default function BlindBoxPanel({
               return (
                 <span key={badge} style={{
                   display: "inline-flex", alignItems: "center", gap: "4px",
-                  background: "#eef2ff", border: "1px solid #c7d2fe",
+                  background: "#f3f4f6", border: "1px solid #e5e7eb",
                   borderRadius: "20px", padding: "3px 10px 3px 8px",
-                  fontSize: "0.8rem", fontWeight: 600, color: "#4338ca",
+                  fontSize: "0.8rem", fontWeight: 600, color: "#111827",
                   whiteSpace: "nowrap", animation: "badgeIn 0.2s ease",
                 }}>
-                  <span>{cat?.icon}</span>
                   <span>{cat?.label}</span>
                   <button
                     onClick={removeBadge}
                     style={{
                       background: "none", border: "none", cursor: "pointer",
-                      color: "#818cf8", fontSize: "14px", lineHeight: 1,
+                      color: "#6b7280", fontSize: "14px", lineHeight: 1,
                       padding: "0 0 0 2px", display: "flex", alignItems: "center",
+                      transition: "color 0.2s"
                     }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = "#111827"}
+                    onMouseLeave={(e) => e.currentTarget.style.color = "#6b7280"}
                     aria-label={`Xóa ${cat?.label}`}
                   >✕</button>
                 </span>
@@ -410,7 +412,7 @@ export default function BlindBoxPanel({
               value={smartQuery}
               onChange={(e) => setSmartQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSmartGenerate(); }}
-              placeholder={selectedBadges.length > 0 ? "Gõ thêm yêu cầu... (VD: view sông, giá rẻ)" : "VD: quán cà phê yên tĩnh cho cặp đôi, giá bình dân..."}
+              placeholder={selectedBadges.length > 0 ? "Gõ thêm yêu cầu... (VD: view sông, giá rẻ)" : "VD: quán cà phê yên tĩnh cho cặp đôi..."}
               style={{
                 flex: 1, minWidth: "120px", flexBasis: "100%", border: "none", outline: "none",
                 background: "transparent", fontSize: "0.875rem", color: "#111827",
@@ -420,8 +422,8 @@ export default function BlindBoxPanel({
           </div>
           <p style={{ margin: "0.375rem 0 0", fontSize: "0.7rem", color: "#9ca3af", lineHeight: "1.4" }}>
             {isSmartMode
-              ? "🧠 Chế độ AI — Hệ thống sẽ phân tích yêu cầu và tìm kiếm ngữ nghĩa"
-              : "📦 Chế độ Hộp mù — Bốc ngẫu nhiên theo thể loại đã chọn"}
+              ? "Chế độ AI — Hệ thống sẽ phân tích yêu cầu và tìm kiếm ngữ nghĩa"
+              : "Chế độ Hộp mù — Bốc ngẫu nhiên theo thể loại đã chọn"}
           </p>
         </section>
 
@@ -456,8 +458,8 @@ export default function BlindBoxPanel({
                   style={{
                     padding: "8px 14px",
                     borderRadius: "10px",
-                    border: isActive ? "2px solid #4338ca" : "1px solid #e5e7eb",
-                    background: isActive ? "#eef2ff" : "#fff",
+                    border: isActive ? "2px solid #111827" : "1px solid #e5e7eb",
+                    background: isActive ? "#f3f4f6" : "#fff",
                     cursor: "pointer",
                     display: "inline-flex",
                     alignItems: "center",
@@ -469,7 +471,7 @@ export default function BlindBoxPanel({
                   <span style={{ fontSize: "1.15rem" }}>{item.icon}</span>
                   <span style={{
                     fontSize: "0.8rem", fontWeight: 600,
-                    color: isActive ? "#4338ca" : "#374151",
+                    color: isActive ? "#111827" : "#374151",
                   }}>{item.label}</span>
                 </button>
               );
@@ -512,27 +514,23 @@ export default function BlindBoxPanel({
             border: "none",
             background: isGenerating || !userLocation
               ? "#e2e8f0"
-              : isSmartMode
-                ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
-                : "#111827",
+              : "#111827",
             color: isGenerating || !userLocation ? "#94a3b8" : "#fff",
             fontSize: "1rem", fontWeight: 700,
             cursor: !userLocation || isGenerating ? "not-allowed" : "pointer",
             transition: "all 0.2s ease",
             boxShadow: isGenerating || !userLocation
               ? "none"
-              : isSmartMode
-                ? "0 4px 16px rgba(99,102,241,0.35)"
-                : "0 4px 12px rgba(17, 24, 39, 0.25)",
+              : "0 4px 12px rgba(17, 24, 39, 0.25)",
           }}
           onMouseDown={(e) => { if(!isGenerating && userLocation) e.currentTarget.style.transform = "scale(0.97)" }}
           onMouseUp={(e) => e.currentTarget.style.transform = "scale(1)"}
         >
           {isGenerating
-            ? "⏳ Đang tìm kiếm..."
+            ? "Đang tìm kiếm..."
             : isSmartMode
-              ? "🧠 Tìm kiếm thông minh"
-              : "🎲 Lắc hộp mù"}
+              ? "Tìm kiếm thông minh"
+              : "Lắc hộp mù"}
         </button>
 
         <button
@@ -566,29 +564,50 @@ export default function BlindBoxPanel({
             {!isRevealed ? (
               // Hidden name state (Clue)
               <div style={{ 
-                padding: "1.25rem", textAlign: "center", background: "#f8fafc", 
-                border: "1px dashed #cbd5e1", borderRadius: "12px" 
+                padding: "1.5rem", textAlign: "center", 
+                background: "linear-gradient(145deg, #1f2937, #0f172a)", 
+                color: "#f8fafc",
+                borderRadius: "16px",
+                position: "relative",
+                overflow: "hidden",
+                boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
+                border: "1px solid #334155"
               }}>
-                <h3 style={{ margin: "0 0 12px", fontSize: "1.1rem", color: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                  <span>🤫</span> Hộp mù đã sẵn sàng!
+                <h3 style={{ margin: "0 0 16px", fontSize: "1.15rem", color: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", fontWeight: 800 }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#fbbf24" }}>
+                    <rect x="3" y="8" width="18" height="14" rx="2" />
+                    <path d="M12 5v3" />
+                    <path d="M19 12H5" />
+                    <path d="M12 12v10" />
+                    <path d="M8 8V5c0-1.1.9-2 2-2h4c1.1 0 2 .9 2 2v3" />
+                  </svg>
+                  Hộp mù đã sẵn sàng!
                 </h3>
-                <p style={{ fontSize: "0.875rem", color: "#475569", marginBottom: "1.25rem", lineHeight: "1.6" }}>
-                  Gợi ý: Địa điểm này cách bạn khoảng <br/>
-                  <strong style={{fontSize: "1rem", color: "#334155"}}>{userLocation ? haversineDist(userLocation.lat, userLocation.lng, result.lat, result.lng).toFixed(1) : "?"} km</strong>. <br/>
-                  Nơi đây đã có <strong style={{color: "#334155"}}>{result.reviews_count}</strong> người đến khám phá và được đánh giá <strong style={{color: "#334155"}}>{result.rating}⭐</strong>.
-                </p>
+                <div style={{ 
+                  background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "12px",
+                  marginBottom: "1.25rem", border: "1px solid rgba(255,255,255,0.08)"
+                }}>
+                  <p style={{ fontSize: "0.875rem", color: "#cbd5e1", margin: 0, lineHeight: "1.6" }}>
+                    Địa điểm này cách bạn <strong style={{ color: "#fbbf24", fontSize: "1.05rem" }}>{userLocation ? haversineDist(userLocation.lat, userLocation.lng, result.lat, result.lng).toFixed(1) : "?"} km</strong>. <br/>
+                    Đã có <strong style={{ color: "#fff" }}>{result.reviews_count}</strong> người tham quan, đạt <strong style={{ color: "#fbbf24" }}>{result.rating}⭐</strong>.
+                  </p>
+                </div>
                 <button onClick={() => setIsRevealed(true)}
                   style={{ 
-                    width: "100%", padding: "0.75rem", borderRadius: "8px", 
-                    // Nút mở khóa đổi thành xám đậm, rê chuột vào sẽ ra đen
-                    background: "#374151", 
-                    color: "#fff", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 700,
-                    transition: "background 0.2s"
+                    width: "100%", padding: "0.875rem", borderRadius: "10px", 
+                    background: "#f8fafc", 
+                    color: "#0f172a", border: "none", cursor: "pointer", fontSize: "0.9rem", fontWeight: 700,
+                    transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "#111827"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "#374151"}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "#e2e8f0"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.transform = "translateY(0)"; }}
+                  onMouseDown={(e) => e.currentTarget.style.transform = "scale(0.98)"}
                   >
-                  🔓 Mở khóa xem tên (Mất vui nhé!)
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  Mở khóa khám phá
                 </button>
               </div>
             ) : (
@@ -598,8 +617,13 @@ export default function BlindBoxPanel({
                   <img src={result.photo_url} alt={result.name}
                     style={{ width: "100%", height: "140px", objectFit: "cover", display: "block" }} />
                 ) : (
-                  <div style={{ width: "100%", height: "120px", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem" }}>
-                    🎁
+                  <div style={{ width: "100%", height: "140px", background: "linear-gradient(135deg, #1e293b, #0f172a)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5, marginBottom: "8px" }}>
+                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                      <line x1="12" y1="22.08" x2="12" y2="12" />
+                    </svg>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "2px" }}>ĐỊA ĐIỂM BÍ MẬT</span>
                   </div>
                 )}
                 <div style={{ padding: "1rem" }}>
