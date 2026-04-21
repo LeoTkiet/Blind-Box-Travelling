@@ -16,7 +16,7 @@ interface Props {
 
 const DEFAULT_CENTER: [number, number] = [106.6297, 10.8231];
 
-export default function MapView({ userLocation, radius, result }: Props) {
+export default function MapView({ userLocation, radius, result}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
@@ -236,28 +236,33 @@ export default function MapView({ userLocation, radius, result }: Props) {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [mapReady, result]);
 
-  // test ẩn/hiện địa điểm dựa trên vị trí giả lập trên map
   useEffect(() => {
   const map = mapRef.current;
-  if (!mapReady || !map || !userLocation || !result || !popupRef.current) return;
+  // Kiểm tra nếu chưa có map hoặc chưa có result thì không làm gì cả
+  if (!mapReady || !map) return;
 
-  const dist = getDistanceKm(
-    userLocation.lat, 
-    userLocation.lng, 
-    result.lat, 
-    result.lng
+  const style = map.getStyle();
+  if (!style || !style.layers) return;
+
+  // Nếu có 'result' thì coi như đã lắc (isShaken = true)
+  const shouldHide = !!result; 
+
+  const poiLayers = style.layers.filter(layer => 
+    layer.id.includes('poi') || 
+    layer.id.includes('transit') ||
+    layer.id.includes('settlement-subdivision') ||
+    layer.id.includes('landmark')
   );
 
-  console.log("Khoảng cách test địa chỉ:", dist.toFixed(3), "km");
-
-  if (dist <= 0.2) {
-    if (!popupRef.current.isOpen()) {
-      popupRef.current.setLngLat([result.lng, result.lat]).addTo(map);
-    }
-  } else {
-    if (popupRef.current.isOpen()) popupRef.current.remove();
-  }
-}, [userLocation, result, mapReady]);
+  poiLayers.forEach(layer => {
+    map.setLayoutProperty(
+      layer.id, 
+      'visibility', 
+      shouldHide ? 'none' : 'visible' 
+    );
+  });
+}, [mapReady, result]);
+  
   return (
     <div style={{ flex: 1, position: "relative" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
