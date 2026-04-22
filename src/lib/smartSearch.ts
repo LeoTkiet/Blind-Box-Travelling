@@ -1,10 +1,3 @@
-// ============================================================
-// lib/smartSearch.ts — Module 8: Smart Location Search Engine
-// Pipeline 3 tầng: LLM Parser → Smart Filter → Geo-Semantic Rerank
-// ============================================================
-
-// --------------- TYPES ---------------
-
 export interface SmartSearchInput {
   query: string;            // Câu hỏi tự do của user
   selectedTags: string[];   // Các category badge đã chọn (VD: ["cafe", "restaurant"])
@@ -43,6 +36,19 @@ export interface ScoredLocation {
   _relaxLevel: number;
 }
 
+// --------------- CACHE SYSTEM ---------------
+// Simple in-memory LRU-like cache mechanisms
+const intentCache = new Map<string, ParsedIntent>();
+const embeddingCache = new Map<string, number[]>();
+
+function setCache<T>(cache: Map<string, T>, key: string, value: T, maxItems = 200) {
+  if (cache.size >= maxItems) {
+    const firstKey = cache.keys().next().value;
+    if (firstKey) cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
+
 // --------------- TIER 1: LLM QUERY PARSER ---------------
 
 const GROQ_BASE = "https://api.groq.com/openai/v1/chat/completions";
@@ -52,31 +58,42 @@ export async function parseQueryWithLLM(
   query: string,
   selectedTags: string[]
 ): Promise<ParsedIntent> {
+  const cacheKey = `${query.trim().toLowerCase()}_${selectedTags.join('|')}`;
+  if (intentCache.has(cacheKey)) {
+    console.log("[SmartSearch] Tier 1 — Cache Hit for query:", query);
+    return intentCache.get(cacheKey)!;
+  }
+
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("GROQ_API_KEY chưa được cấu hình");
 
-  const systemPrompt = `Bạn là bộ phân tích câu hỏi tìm kiếm địa điểm du lịch/ẩm thực tại Việt Nam.
-Nhiệm vụ: Phân tích câu hỏi của người dùng và trích xuất các thuộc tính sau.
+  const systemPrompt = `Phân tích query tìm kiếm địa điểm VN & xuất JSON. Không giải thích.
 
-Quy tắc giá trị cho từng trường:
-- price: chỉ dùng trong ["miễn phí", "bình dân", "tầm trung", "cao cấp"]
-- time: chỉ dùng trong ["buổi sáng", "buổi trưa", "buổi chiều", "buổi tối", "về đêm", "cả ngày", "cuối tuần"]
-- audience: chỉ dùng trong ["cặp đôi", "gia đình", "bạn bè", "một mình", "trẻ em", "công việc", "du khách"]
-- highlight: tự do — các điểm nổi bật như "view đẹp", "sống ảo", "yên tĩnh", "không gian rộng", "đồ ăn ngon", "truyền thống"...
-- categories: loại hình địa điểm. Chỉ dùng trong ["restaurant", "cafe", "bar/pub", "bakery", "hotel", "hostel", "homestay", "attraction", "museum", "pagoda/temple", "park", "market", "shopping_mall", "souvenir_shop", "entertainment", "spa/wellness", "sports", "theme_park", "beach", "viewpoint", "nature", "transport_hub", "event_venue"]
-- search_document: viết 1 câu ngắn gon 15-25 từ tiếng Việt cô đọng ý nghĩa tìm kiếm.
+ENUMS HỢP LỆ:
+- price: ["miễn phí", "bình dân", "tầm trung", "cao cấp"] (rẻ/sinh viên->bình dân, đắt/sang->cao cấp)
+- time: ["buổi sáng", "buổi trưa", "buổi chiều", "buổi tối", "về đêm", "cả ngày", "cuối tuần"] (khuya->về đêm, khuya muộn->về đêm)
+- audience: ["cặp đôi", "gia đình", "bạn bè", "một mình", "trẻ em", "công việc", "du khách"] (hẹn hò->cặp đôi, họp/bàn việc->công việc)
+- highlight: Mảng tự do (2-4 từ/tag). Bắt cả ý ngầm (vd: "chụp hình" -> "sống ảo").
+- categories: ["restaurant","cafe","bar/pub","bakery","hotel","hostel","homestay","attraction","museum","pagoda/temple","park","market","shopping_mall","souvenir_shop","entertainment","spa/wellness","sports","theme_park","beach","viewpoint","nature","transport_hub","event_venue"]
+Map ngầm Category:
+- "Ăn/Nhậu": phở, cơm, ăn sáng, nướng, lẩu, hải sản -> "restaurant"
+- "Lưu trú": ngủ, qua đêm, nghỉ ngơi -> "hotel" hoặc "homestay"
+- "Làm đẹp": gội đầu, massage, xông hơi -> "spa/wellness"
+- "Giải trí": bida, banh bàn, karaoke, xem phim -> "entertainment"
+- "Cảnh quan": ngắm hoàng hôn, ngắm cảnh, đỉnh, đồi -> "viewpoint"
+- "Tâm linh": cầu duyên, khấn phật, đền chùa -> "pagoda/temple"
+- Tự nhiên: thác, suối, cắm trại -> "nature"
+LƯU Ý: Nếu câu hỏi quá chung chung (VD: "chỗ thư giãn", "đi chơi") -> BỎ TRỐNG categories [].
 
-Nếu người dùng đã chọn category badge: ${selectedTags.length > 0 ? selectedTags.join(', ') : 'chưa chọn'}, hãy ưu tiên giữ nguyên.
+QUY TẮC:
+1. Chỉ lấy ý trong query, không bịa. Trống -> [].
+2. Phân biệt ý chính/phụ: "cafe đồ ăn ngon" -> cat:["cafe"], highlight:["đồ ăn ngon"].
+3. Đảo ngược phủ định: "không đắt" -> price:["tầm trung"], "không ồn" -> highlight:["yên tĩnh"].
+4. Category user chọn: [${selectedTags.join() || 'trống'}]. Ưu tiên & gộp kết quả suy luận vào mảng này.
+5. "search_document": Câu TV tự nhiên 15-25 từ mô tả ĐẦY ĐỦ yêu cầu (loại hình, không gian, giá, đối tượng) để search Vercel/Faiss. KHÔNG liệt kê tag.
 
-Trả về DUY NHẤT JSON, không giải thích:
-{
-  "price": [],
-  "time": [],
-  "audience": [],
-  "highlight": [],
-  "categories": [],
-  "search_document": ""
-}`;
+YÊU CẦU ĐẦU RA DUY NHẤT:
+{"price":[],"time":[],"audience":[],"highlight":[],"categories":[],"search_document":"..."}`;
 
   const res = await fetch(GROQ_BASE, {
     method: "POST",
@@ -90,7 +107,7 @@ Trả về DUY NHẤT JSON, không giải thích:
         { role: "system", content: systemPrompt },
         { role: "user", content: query },
       ],
-      temperature: 0.3,
+      temperature: 0.2,
       max_tokens: 512,
       response_format: { type: "json_object" },
     }),
@@ -104,26 +121,33 @@ Trả về DUY NHẤT JSON, không giải thích:
   const data = await res.json();
   const rawText: string = data?.choices?.[0]?.message?.content ?? "";
 
-  let parsed;
+  let parsed: any;
   try {
     parsed = JSON.parse(rawText);
   } catch {
     throw new Error(`Groq trả về JSON không hợp lệ: ${rawText}`);
   }
 
+  // Ensure type safety (force convert string/object to array if LLM hallucinates schema)
+  const ensureArray = (val: any) => Array.isArray(val) ? val : (typeof val === 'string' && val.trim() !== '' ? [val] : []);
+
   // Merge selectedTags vào categories (đảm bảo không trùng)
+  const safeCategories = ensureArray(parsed.categories);
   const mergedCategories = Array.from(
-    new Set([...(parsed.categories || []), ...selectedTags.filter((t) => t !== "all")])
+    new Set([...safeCategories, ...selectedTags.filter((t) => t !== "all")])
   );
 
-  return {
-    price: parsed.price || [],
-    time: parsed.time || [],
-    audience: parsed.audience || [],
-    highlight: parsed.highlight || [],
+  const intentResult: ParsedIntent = {
+    price: ensureArray(parsed.price),
+    time: ensureArray(parsed.time),
+    audience: ensureArray(parsed.audience),
+    highlight: ensureArray(parsed.highlight),
     categories: mergedCategories,
-    search_document: parsed.search_document || query,
+    search_document: typeof parsed.search_document === 'string' ? parsed.search_document : query,
   };
+
+  setCache(intentCache, cacheKey, intentResult);
+  return intentResult;
 }
 
 // --------------- TIER 2: SMART FILTER & 4-LEVEL RELAXATION ---------------
@@ -137,14 +161,15 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // Kiểm tra overlap giữa 2 mảng tag (case-insensitive)
 function tagsOverlap(locationTags: string[] | null, filterTags: string[]): boolean {
-  if (!locationTags || locationTags.length === 0 || filterTags.length === 0) return true; // no filter = pass
+  if (!filterTags || filterTags.length === 0) return true; // user no filter = pass
+  if (!locationTags || locationTags.length === 0) return false; // filter required but location has no info -> fail
   const normalizedLoc = locationTags.map((t) => t.toLowerCase().trim());
   return filterTags.some((f) => normalizedLoc.includes(f.toLowerCase().trim()));
 }
@@ -162,8 +187,8 @@ export async function smartFilter(
 ): Promise<FilterResult> {
   const supabase = await createClient();
 
-  // Build base query — lấy tất cả cột cần thiết
-  let query = supabase
+  // Build base query
+  let supabaseQuery = supabase
     .from("locations")
     .select(
       "name, category, lat, lng, rating, reviews_count, tags_price, tags_location, tags_audience, tags_time, tags_highlight, search_document, embedding"
@@ -171,12 +196,25 @@ export async function smartFilter(
     .not("lat", "is", null)
     .not("lng", "is", null);
 
-  // Lọc category ở cấp Database (nhanh nhất)
+  // Bounding Box Optimization
+  // 1 vĩ độ (latitude) = ~111 km. 1 kinh độ (longitude) = ~111*cos(lat) km.
+  const latRadian = (lat * Math.PI) / 180;
+  const dLat = radius / 111.0;
+  const dLng = radius / (111.0 * Math.cos(latRadian));
+
+  supabaseQuery = supabaseQuery
+    .gte("lat", lat - dLat)
+    .lte("lat", lat + dLat)
+    .gte("lng", lng - dLng)
+    .lte("lng", lng + dLng);
+
+  // Lọc category ở cấp Database
   if (intent.categories.length > 0) {
-    query = query.in("category", intent.categories);
+    supabaseQuery = supabaseQuery.in("category", intent.categories);
   }
 
-  const { data: rawLocations, error } = await query;
+  // Thêm giới hạn row chống xì RAM nếu bbox ở TP dày đặc
+  const { data: rawLocations, error } = await supabaseQuery.limit(3000);
 
   if (error) throw new Error(`DB error: ${error.message}`);
   if (!rawLocations || rawLocations.length === 0) {
@@ -229,7 +267,7 @@ export async function smartFilter(
       ...loc,
       embedding: parseEmbedding(loc.embedding),
       _score: 0,
-      _penalty: 0.4,
+      _penalty: 0.32,  // Thu hẹp nhẹ penalty level 4 (thay vì 0.4) để tránh rớt thẳng xuống dưới score threshold
       _relaxLevel: 4,
     })),
     relaxLevel: 4,
@@ -255,6 +293,12 @@ function parseEmbedding(raw: unknown): number[] | null {
 
 // Gọi Gemini Embedding API
 async function getQueryEmbedding(searchDocument: string): Promise<number[]> {
+  const cacheKey = searchDocument.trim();
+  if (embeddingCache.has(cacheKey)) {
+    console.log("[SmartSearch] Tier 3 — Cache Hit for embedding");
+    return embeddingCache.get(cacheKey)!;
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY chưa được cấu hình");
 
@@ -276,7 +320,11 @@ async function getQueryEmbedding(searchDocument: string): Promise<number[]> {
   }
 
   const data = await res.json();
-  return data.embedding?.values || [];
+  const values = data.embedding?.values || [];
+  if (values.length > 0) {
+    setCache(embeddingCache, cacheKey, values, 500); // Lưu 500 embeddings
+  }
+  return values;
 }
 
 // Cosine Similarity
@@ -366,8 +414,11 @@ export interface SmartSearchResult {
     photo_url?: string;
   };
   relaxLevel: number; // 0 = exact match, >0 = relaxed
+  score: number;      // Final score of the selected location
   debug?: {
     totalCandidates: number;
+    qualifiedCount: number;
+    threshold: number;
     top5Scores: number[];
   };
 }
@@ -397,11 +448,27 @@ export async function runSmartSearch(input: SmartSearchInput): Promise<SmartSear
   // Sort descending
   ranked.sort((a, b) => b._score - a._score);
 
-  // Top 5 → Random 1 (Blind Box packaging)
-  const top5 = ranked.slice(0, Math.min(5, ranked.length));
+  const hasAnyEmbedding = ranked.some((l) => l.embedding && l.embedding.length > 0);
+  const MIN_SCORE_THRESHOLD = hasAnyEmbedding ? 0.15 : 0.10;
+
+  const qualifiedResults = ranked.filter((l) => l._score >= MIN_SCORE_THRESHOLD);
+
+  console.log(`[SmartSearch] Tier 3 — All scores: [${ranked.slice(0, 10).map((l) => l._score.toFixed(3)).join(", ")}${ranked.length > 10 ? '...' : ''}]`);
+  console.log(`[SmartSearch] Threshold=${MIN_SCORE_THRESHOLD}, Qualified=${qualifiedResults.length}/${ranked.length}`);
+
+  if (qualifiedResults.length === 0) {
+    // Tất cả kết quả đều có điểm quá thấp — không trả về kết quả kém chất lượng
+    const bestScore = ranked.length > 0 ? ranked[0]._score.toFixed(3) : 'N/A';
+    throw new Error(
+      `Không tìm thấy địa điểm phù hợp với yêu cầu của bạn (điểm cao nhất: ${bestScore}, ngưỡng: ${MIN_SCORE_THRESHOLD}). Hãy thử mô tả khác hoặc tăng khoảng cách tìm kiếm.`
+    );
+  }
+
+  // Top 5 qualified → Random 1 (Blind Box packaging)
+  const top5 = qualifiedResults.slice(0, Math.min(5, qualifiedResults.length));
   const winner = top5[Math.floor(Math.random() * top5.length)];
 
-  console.log(`[SmartSearch] Tier 3 — Top 5 scores: [${top5.map((l) => l._score.toFixed(3)).join(", ")}]`);
+  console.log(`[SmartSearch] Top 5 qualified: [${top5.map((l) => `"${l.name}"(${l._score.toFixed(3)})`).join(", ")}]`);
   console.log(`[SmartSearch] 🎲 Winner: "${winner.name}" (score=${winner._score.toFixed(3)})`);
 
   return {
@@ -414,8 +481,11 @@ export async function runSmartSearch(input: SmartSearchInput): Promise<SmartSear
       reviews_count: winner.reviews_count ?? 0,
     },
     relaxLevel: winner._relaxLevel,
+    score: parseFloat(winner._score.toFixed(3)),
     debug: {
       totalCandidates: candidates.length,
+      qualifiedCount: qualifiedResults.length,
+      threshold: MIN_SCORE_THRESHOLD,
       top5Scores: top5.map((l) => parseFloat(l._score.toFixed(3))),
     },
   };
