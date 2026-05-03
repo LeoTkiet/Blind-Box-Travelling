@@ -5,34 +5,31 @@ import type { UserLocation, LocationResult } from "./AppContent";
 import { Inter } from "next/font/google";
 import GroupRoom from "./GroupTravel";
 
+import { 
+  LayoutGrid, Utensils, Coffee, Beer, Croissant, Building2, Tent, Home, 
+  Camera, Landmark, Castle, Trees, Store, ShoppingBag, Gift, 
+  Gamepad2, Sparkles, Dumbbell, FerrisWheel, Umbrella, Mountain, 
+  Leaf, Train, Calendar 
+} from "lucide-react";
+
 const inter = Inter({ subsets: ["latin", "vietnamese"], display: "swap" });
 
-// ── 23 CATEGORIES (matching enricher.js VALID_CATEGORIES) ──
 const CATEGORIES = [
-  { value: "all", label: "Tất cả", icon: "🎲" },
-  { value: "restaurant", label: "Nhà hàng", icon: "🍽️" },
-  { value: "cafe", label: "Cà phê", icon: "☕" },
-  { value: "bar/pub", label: "Bar & Pub", icon: "🍺" },
-  { value: "bakery", label: "Tiệm bánh", icon: "🧁" },
-  { value: "hotel", label: "Khách sạn", icon: "🏨" },
-  { value: "hostel", label: "Hostel", icon: "🛏️" },
-  { value: "homestay", label: "Homestay", icon: "🏡" },
-  { value: "attraction", label: "Tham quan", icon: "📸" },
-  { value: "museum", label: "Bảo tàng", icon: "🏛️" },
-  { value: "pagoda/temple", label: "Chùa & Đền", icon: "🛕" },
-  { value: "park", label: "Công viên", icon: "🌳" },
-  { value: "market", label: "Chợ", icon: "🏪" },
-  { value: "shopping_mall", label: "TTTM", icon: "🛍️" },
-  { value: "souvenir_shop", label: "Quà lưu niệm", icon: "🎁" },
-  { value: "entertainment", label: "Giải trí", icon: "🎭" },
-  { value: "spa/wellness", label: "Spa", icon: "💆" },
-  { value: "sports", label: "Thể thao", icon: "⚽" },
-  { value: "theme_park", label: "Công viên giải trí", icon: "🎢" },
-  { value: "beach", label: "Biển", icon: "🏖️" },
-  { value: "viewpoint", label: "Ngắm cảnh", icon: "🌄" },
-  { value: "nature", label: "Thiên nhiên", icon: "🌿" },
-  { value: "transport_hub", label: "Bến xe/Ga", icon: "🚉" },
-  { value: "event_venue", label: "Sự kiện", icon: "🎪" },
+  { value: "all", label: "Tất cả", Icon: LayoutGrid },
+  { value: "restaurant", label: "Nhà hàng", Icon: Utensils },
+  { value: "cafe", label: "Cà phê", Icon: Coffee },
+  { value: "bakery", label: "Tiệm bánh", Icon: Croissant },
+  { value: "hotel", label: "Khách sạn", Icon: Building2 },
+  { value: "homestay", label: "Homestay", Icon: Home },
+  { value: "attraction", label: "Tham quan", Icon: Camera },
+  { value: "museum", label: "Bảo tàng", Icon: Landmark },
+  { value: "pagoda/temple", label: "Chùa & Đền", Icon: Castle },
+  { value: "park", label: "Công viên", Icon: Trees },
+  { value: "market", label: "Chợ", Icon: Store },
+  { value: "shopping_mall", label: "TTTM", Icon: ShoppingBag },
+  { value: "entertainment", label: "Giải trí", Icon: Gamepad2 },
+  { value: "sports", label: "Thể thao", Icon: Dumbbell },
+  { value: "theme_park", label: "Công viên giải trí", Icon: FerrisWheel },
 ];
 
 interface Suggestion { id: string; place_name: string; center: [number, number]; }
@@ -46,15 +43,18 @@ interface Props {
   result: LocationResult | null;
   isGenerating: boolean;
   error: string | null;
-  relaxLevel?: number; // 0 = exact, >0 = nới lỏng tiêu chí
+  relaxLevel?: number;
 }
 
 const sectionLabel: React.CSSProperties = {
-  margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 700,
-  color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em",
+  margin: "0 0 0.75rem", 
+  fontSize: "0.65rem", 
+  fontWeight: 800,
+  color: "#64748b", 
+  textTransform: "uppercase", 
+  letterSpacing: "0.15em",
 };
 
-// Helper function to calculate distance for the "Clue"
 function haversineDist(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -75,29 +75,20 @@ export default function BlindBoxPanel({
   const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Smart Input (Magic Bar) state
   const [smartQuery, setSmartQuery] = useState("");
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
-
-  // State to manage name visibility (Unlock)
   const [isRevealed, setIsRevealed] = useState(false);
   const [showGroupRoom, setShowGroupRoom] = useState(false);
-
-  // Fallback tooltip
   const [showRelaxTooltip, setShowRelaxTooltip] = useState(false);
 
-  // DRAG SHEET LOGIC
-  const [sheetHeight, setSheetHeight] = useState<number>(30); // 30vh
+  const [sheetHeight, setSheetHeight] = useState<number>(30);
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const dragStartRef = useRef<{ y: number, h: number } | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
-  // DESKTOP RESIZE LOGIC
-  const [panelWidth, setPanelWidth] = useState<number>(360);
+  const [panelWidth, setPanelWidth] = useState<number>(380);
   const desktopDragRef = useRef<{ x: number, w: number, currentW?: number } | null>(null);
   const asideRef = useRef<HTMLElement>(null);
-
-  // Scrollable category ref
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const onDesktopDragStart = (e: React.MouseEvent) => {
@@ -112,10 +103,8 @@ export default function BlindBoxPanel({
     if (!desktopDragRef.current) return;
     const delta = e.clientX - desktopDragRef.current.x;
     let newW = desktopDragRef.current.w + delta;
-    if (newW < 280) newW = 280;
+    if (newW < 300) newW = 300;
     if (newW > 600) newW = 600;
-    
-    // Direct DOM manipulation for maximum smoothness without triggering React re-renders constantly
     if (asideRef.current && !isMobile) {
       asideRef.current.style.width = `${newW}px`;
     }
@@ -152,11 +141,9 @@ export default function BlindBoxPanel({
     const y = 'touches' in e ? e.touches[0].clientY : e.clientY;
     const deltaY = dragStartRef.current.y - y;
     const deltaVh = (deltaY / window.innerHeight) * 100;
-    
     let newHeight = dragStartRef.current.h + deltaVh;
     if (newHeight < 15) newHeight = 15;
     if (newHeight > 90) newHeight = 90;
-    
     setSheetHeight(newHeight);
   };
 
@@ -164,19 +151,14 @@ export default function BlindBoxPanel({
     if (!dragStartRef.current) return;
     dragStartRef.current = null;
     setIsDragging(false);
-    // Snap logic
-    if (sheetHeight > 55) {
-      setSheetHeight(85);
-    } else {
-      setSheetHeight(30);
-    }
+    if (sheetHeight > 55) setSheetHeight(85);
+    else setSheetHeight(30);
   };
 
-  // Close the box when a new result arrives
   useEffect(() => {
     if (result) {
       setIsRevealed(false);
-      setSheetHeight(30); // Snap down to let user see the map!
+      setSheetHeight(30);
     }
   }, [result]);
 
@@ -185,9 +167,7 @@ export default function BlindBoxPanel({
       setGpsStatus("done");
       setMode("gps");
     }
-    if (!userLocation) {
-      setGpsStatus("idle");
-    }
+    if (!userLocation) setGpsStatus("idle");
   }, [userLocation]);
 
   const handleGPS = useCallback(() => {
@@ -218,42 +198,23 @@ export default function BlindBoxPanel({
     setSuggestions([]);
   };
 
-  // ── Sync category from badge (avoids setState-during-render warning) ──
   useEffect(() => {
     setCategory(selectedBadges.length > 0 ? selectedBadges[0] : "all");
   }, [selectedBadges, setCategory]);
 
-  // ── Badge Logic (single-select) ──
   const toggleBadge = (catValue: string) => {
-    if (catValue === "all") {
-      setSelectedBadges([]);
-      return;
-    }
-    // Single-select: click same → deselect, click different → replace
-    setSelectedBadges((prev) =>
-      prev.includes(catValue) ? [] : [catValue]
-    );
+    if (catValue === "all") { setSelectedBadges([]); return; }
+    setSelectedBadges((prev) => prev.includes(catValue) ? [] : [catValue]);
   };
 
-  // Remove badge chip
-  const removeBadge = () => {
-    setSelectedBadges([]);
-  };
-
-  // ── Dual-Routing Handler ──
-  const handleSmartGenerate = () => {
-    const trimmedQuery = smartQuery.trim();
-    // Pass query and selectedBadges to parent — parent decides API routing
-    onGenerate(trimmedQuery, selectedBadges);
-  };
-
-  // Determine if we're in "smart mode" (text query present)
+  const removeBadge = () => setSelectedBadges([]);
+  const handleSmartGenerate = () => onGenerate(smartQuery.trim(), selectedBadges);
   const isSmartMode = smartQuery.trim().length > 0;
 
   return (
     <aside 
       ref={asideRef}
-      className={`${inter.className} w-full flex-shrink-0 md:border-r border-[#e5e7eb] bg-white flex flex-col overflow-hidden z-10 absolute md:relative bottom-0 left-0 md:bottom-auto md:left-auto rounded-t-3xl md:rounded-none shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:shadow-none`}
+      className={`${inter.className} w-full flex-shrink-0 md:border-r border-slate-200 bg-white flex flex-col overflow-hidden z-10 absolute md:relative bottom-0 left-0 md:bottom-auto md:left-auto rounded-t-[2rem] md:rounded-none shadow-[0_-8px_30px_rgba(0,0,0,0.06)] md:shadow-none`}
       style={isMobile ? { 
         height: `${sheetHeight}%`, 
         transition: isDragging ? 'none' : 'height 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' 
@@ -262,89 +223,87 @@ export default function BlindBoxPanel({
       {!isMobile && (
         <div 
           onMouseDown={onDesktopDragStart}
-          className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-gray-300 z-50 transition-colors"
+          className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-slate-200 z-50 transition-colors"
         />
       )}
-      {/* Drag Handle for Mobile */}
       <div 
-        className="w-full flex justify-center items-center pt-3 pb-2 cursor-grab active:cursor-grabbing flex-shrink-0 touch-none md:hidden bg-white z-20 sticky top-0"
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        onMouseDown={onTouchStart}
-        onMouseMove={onTouchMove}
-        onMouseUp={onTouchEnd}
-        onMouseLeave={onTouchEnd}
+        className="w-full flex justify-center items-center pt-4 pb-3 cursor-grab active:cursor-grabbing flex-shrink-0 touch-none md:hidden bg-white z-20 sticky top-0"
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+        onMouseDown={onTouchStart} onMouseMove={onTouchMove} onMouseUp={onTouchEnd} onMouseLeave={onTouchEnd}
       >
-        <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
+        <div className="w-10 h-1.5 bg-slate-200 rounded-full" />
       </div>
 
       <div 
-        className={`flex-1 overflow-y-auto ${isMobile ? "px-5 pt-1 pb-10" : "p-5"}`}
+        className={`flex-1 overflow-y-auto ${isMobile ? "px-6 pt-1 pb-10" : "p-8"}`}
         style={isMobile ? { paddingBottom: "calc(env(safe-area-inset-bottom, 24px) + 24px)" } : undefined}
       >
-        <h2 style={{ margin: "0 0 1.25rem", fontSize: "1.2rem", fontWeight: 800, color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
-          <span>🎲</span> Du lịch hộp mù
+        {/* EDITORIAL HEADER */}
+        <h2 style={{ margin: "0 0 2rem", fontSize: "0.85rem", fontWeight: 900, color: "#0f172a", letterSpacing: "0.05em", borderBottom: "1px solid #f1f5f9", paddingBottom: "1rem" }}>
+          BLIND BOX TRAVELLING
         </h2>
 
         {/* ── LOCATION ── */}
-        <section style={{ marginBottom: "1.25rem" }}>
+        <section style={{ marginBottom: "2rem" }}>
           <p style={sectionLabel}>Vị trí của bạn</p>
-          <div style={{ display: "flex", border: "1px solid #e5e7eb", borderRadius: "8px", overflow: "hidden", marginBottom: "0.75rem" }}>
+          <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "12px", padding: "4px", marginBottom: "0.75rem" }}>
             {(["gps", "address"] as const).map((m) => (
               <button key={m} onClick={() => { setMode(m); setUserLocation(null); setGpsStatus("idle"); setSuggestions([]); setAddressInput(""); }}
                 style={{
-                  flex: 1, padding: "0.625rem", border: "none", cursor: "pointer",
-                  fontSize: "0.875rem", fontWeight: 600,
-                  background: mode === m ? "#111827" : "#fff",
-                  color: mode === m ? "#fff" : "#6b7280", transition: "all 0.15s",
+                  flex: 1, padding: "0.5rem", border: "none", cursor: "pointer", borderRadius: "8px",
+                  fontSize: "0.8rem", fontWeight: 700,
+                  background: mode === m ? "#fff" : "transparent",
+                  color: mode === m ? "#0f172a" : "#64748b", 
+                  boxShadow: mode === m ? "0 2px 4px rgba(0,0,0,0.04)" : "none",
+                  transition: "all 0.2s ease",
                 }}>
-                {m === "gps" ? "📍 GPS" : "🔍 Địa chỉ"}
+                {m === "gps" ? "GPS" : "Địa chỉ"}
               </button>
             ))}
           </div>
 
           {mode === "gps" ? (
-            <div>
-              <button onClick={handleGPS} disabled={gpsStatus === "loading"}
-                style={{
-                  width: "100%", padding: "0.625rem", borderRadius: "8px",
-                  border: "1px solid #e5e7eb", background: "#fff",
-                  fontSize: "0.875rem", fontWeight: 500, cursor: "pointer",
-                  color: gpsStatus === "done" ? "#16a34a" : "#374151",
-                }}>
-                {gpsStatus === "idle" && "Lấy vị trí hiện tại"}
-                {gpsStatus === "loading" && "Đang lấy vị trí..."}
-                {gpsStatus === "done" && "✓ Đã lấy vị trí"}
-                {gpsStatus === "error" && "⚠ Không thể lấy vị trí. Thử lại?"}
-              </button>
-            </div>
+            <button onClick={handleGPS} disabled={gpsStatus === "loading"}
+              style={{
+                width: "100%", padding: "0.875rem", borderRadius: "12px",
+                border: "1px solid #e2e8f0", background: "#fff",
+                fontSize: "0.85rem", fontWeight: 700, cursor: "pointer",
+                color: gpsStatus === "done" ? "#16a34a" : "#0f172a",
+                transition: "all 0.2s"
+              }}>
+              {gpsStatus === "idle" && "Lấy vị trí hiện tại"}
+              {gpsStatus === "loading" && "Đang định vị..."}
+              {gpsStatus === "done" && "Đã xác định vị trí"}
+              {gpsStatus === "error" && "Không thể lấy vị trí"}
+            </button>
           ) : (
             <div style={{ position: "relative" }}>
               <input
                 value={addressInput} onChange={(e) => handleAddressChange(e.target.value)}
                 placeholder="Nhập địa chỉ của bạn..."
                 style={{
-                  width: "100%", boxSizing: "border-box", padding: "0.625rem 0.75rem",
-                  borderRadius: "8px", border: "1px solid #e5e7eb",
-                  fontSize: "0.875rem", outline: "none", color: "#111827",
+                  width: "100%", boxSizing: "border-box", padding: "0.875rem 1rem",
+                  borderRadius: "12px", border: "1px solid transparent", background: "#f8fafc",
+                  fontSize: "0.85rem", outline: "none", color: "#0f172a", transition: "all 0.2s"
                 }}
+                onFocus={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.border = "1px solid #0f172a"; }}
+                onBlur={e => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.border = "1px solid transparent"; }}
               />
               {suggestions.length > 0 && (
                 <div style={{
-                  position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
-                  background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)", zIndex: 20, overflow: "hidden",
+                  position: "absolute", top: "calc(100% + 8px)", left: 0, right: 0,
+                  background: "#fff", border: "1px solid #e2e8f0", borderRadius: "12px",
+                  boxShadow: "0 10px 25px rgba(0,0,0,0.05)", zIndex: 20, overflow: "hidden",
                 }}>
                   {suggestions.map((s) => (
                     <button key={s.id} onClick={() => selectSuggestion(s)}
                       style={{
-                        display: "block", width: "100%", padding: "0.625rem 0.875rem",
+                        display: "block", width: "100%", padding: "0.75rem 1rem",
                         background: "none", border: "none", textAlign: "left",
-                        fontSize: "0.8125rem", color: "#374151", cursor: "pointer",
-                        borderBottom: "1px solid #f3f4f6",
+                        fontSize: "0.8rem", color: "#334155", cursor: "pointer",
+                        borderBottom: "1px solid #f1f5f9",
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
+                      onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
                       onMouseLeave={e => (e.currentTarget.style.background = "none")}
                     >
                       {s.place_name}
@@ -352,127 +311,68 @@ export default function BlindBoxPanel({
                   ))}
                 </div>
               )}
-              {userLocation && (
-                <p style={{ margin: "0.375rem 0 0", fontSize: "0.75rem", color: "#16a34a" }}>✓ Đã chọn địa điểm</p>
-              )}
             </div>
           )}
         </section>
 
-        {/* ── SMART INPUT (MAGIC BAR) ── */}
-        <section style={{ marginBottom: "1.25rem" }}>
+        {/* ── SMART INPUT ── */}
+        <section style={{ marginBottom: "2rem" }}>
           <p style={sectionLabel}>Tìm kiếm thông minh</p>
           <div style={{
-            border: "1px solid #e5e7eb", borderRadius: "12px",
-            padding: "8px 10px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px",
-            background: "#fafbfc", minHeight: "44px",
-            transition: "border-color 0.2s, box-shadow 0.2s",
+            border: "1px solid transparent", borderRadius: "16px",
+            padding: "10px 12px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px",
+            background: "#f8fafc", minHeight: "50px", transition: "all 0.2s",
           }}
-          onFocus={(e) => {
-            const target = e.currentTarget;
-            target.style.borderColor = "#111827";
-            target.style.boxShadow = "0 0 0 3px rgba(17, 24, 39, 0.1)";
-          }}
-          onBlur={(e) => {
-            const target = e.currentTarget;
-            target.style.borderColor = "#e5e7eb";
-            target.style.boxShadow = "none";
-          }}
+          onFocus={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.borderColor = "#0f172a"; }}
+          onBlur={(e) => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.borderColor = "transparent"; }}
           >
-            {/* Badge chips */}
             {selectedBadges.map((badge) => {
               const cat = CATEGORIES.find((c) => c.value === badge);
               return (
                 <span key={badge} style={{
-                  display: "inline-flex", alignItems: "center", gap: "4px",
-                  background: "#f3f4f6", border: "1px solid #e5e7eb",
-                  borderRadius: "20px", padding: "3px 10px 3px 8px",
-                  fontSize: "0.8rem", fontWeight: 600, color: "#111827",
-                  whiteSpace: "nowrap", animation: "badgeIn 0.2s ease",
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  background: "#0f172a", borderRadius: "8px", padding: "4px 10px",
+                  fontSize: "0.75rem", fontWeight: 700, color: "#fff",
                 }}>
-                  <span>{cat?.label}</span>
-                  <button
-                    onClick={removeBadge}
-                    style={{
-                      background: "none", border: "none", cursor: "pointer",
-                      color: "#6b7280", fontSize: "14px", lineHeight: 1,
-                      padding: "0 0 0 2px", display: "flex", alignItems: "center",
-                      transition: "color 0.2s"
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = "#111827"}
-                    onMouseLeave={(e) => e.currentTarget.style.color = "#6b7280"}
-                    aria-label={`Xóa ${cat?.label}`}
-                  >✕</button>
+                  {cat?.label}
+                  <button onClick={removeBadge} style={{ background: "none", border: "none", cursor: "pointer", color: "#cbd5e1" }}>✕</button>
                 </span>
               );
             })}
-            {/* Text input */}
             <input
-              id="smart-search-input"
-              value={smartQuery}
-              onChange={(e) => setSmartQuery(e.target.value)}
+              value={smartQuery} onChange={(e) => setSmartQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSmartGenerate(); }}
-              placeholder={selectedBadges.length > 0 ? "Gõ thêm yêu cầu... (VD: view sông, giá rẻ)" : "VD: quán cà phê yên tĩnh cho cặp đôi..."}
-              style={{
-                flex: 1, minWidth: "120px", flexBasis: "100%", border: "none", outline: "none",
-                background: "transparent", fontSize: "0.875rem", color: "#111827",
-                padding: "4px 0",
-              }}
+              placeholder={selectedBadges.length > 0 ? "Thêm yêu cầu..." : "VD: quán cà phê yên tĩnh..."}
+              style={{ flex: 1, minWidth: "120px", border: "none", outline: "none", background: "transparent", fontSize: "0.85rem", color: "#0f172a" }}
             />
           </div>
-          <p style={{ margin: "0.375rem 0 0", fontSize: "0.7rem", color: "#9ca3af", lineHeight: "1.4" }}>
-            {isSmartMode
-              ? "Chế độ AI — Hệ thống sẽ phân tích yêu cầu và tìm kiếm ngữ nghĩa"
-              : "Chế độ Hộp mù — Bốc ngẫu nhiên theo thể loại đã chọn"}
-          </p>
         </section>
 
-        {/* ── SCROLLABLE 2x2 COLLECTION ── */}
-        <section style={{ marginBottom: "1.25rem" }}>
-          <p style={sectionLabel}>Chọn Bộ Sưu Tập</p>
-          <div
-            ref={scrollRef}
-            style={{
-              display: "grid",
-              gridTemplateRows: "repeat(2, auto)",
-              gridAutoFlow: "column",
-              gridAutoColumns: "max-content",
-              gap: "8px",
-              overflowX: "auto",
-              overflowY: "hidden",
-              paddingBottom: "8px",
-              scrollbarWidth: "thin",
-              scrollbarColor: "#d1d5db transparent",
-              WebkitOverflowScrolling: "touch",
-            }}
-          >
+        {/* ── CATEGORIES ── */}
+        <section style={{ marginBottom: "2rem" }}>
+          <p style={sectionLabel}>Bộ sưu tập</p>
+          <div ref={scrollRef} style={{
+              display: "flex", flexWrap: "wrap", gap: "8px",
+            }}>
             {CATEGORIES.map((item) => {
-              const isActive = item.value === "all"
-                ? selectedBadges.length === 0
-                : selectedBadges.includes(item.value);
+              const isActive = item.value === "all" ? selectedBadges.length === 0 : selectedBadges.includes(item.value);
+              const CategoryIcon = item.Icon; 
               return (
                 <button
-                  key={item.value}
-                  id={`cat-btn-${item.value}`}
-                  onClick={() => toggleBadge(item.value)}
+                  key={item.value} onClick={() => toggleBadge(item.value)}
                   style={{
-                    padding: "8px 14px",
-                    borderRadius: "10px",
-                    border: isActive ? "2px solid #111827" : "1px solid #e5e7eb",
-                    background: isActive ? "#f3f4f6" : "#fff",
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    transition: "all 0.2s ease",
-                    whiteSpace: "nowrap",
+                    padding: "8px 16px", borderRadius: "20px",
+                    border: "1px solid", borderColor: isActive ? "#0f172a" : "#e2e8f0",
+                    background: isActive ? "#0f172a" : "#fff",
+                    color: isActive ? "#fff" : "#475569",
+                    fontSize: "0.75rem", fontWeight: 700, cursor: "pointer",
+                    transition: "all 0.2s",
+                    display: "flex", alignItems: "center", gap: "6px" 
                   }}
                 >
-                  <span style={{ fontSize: "1.15rem" }}>{item.icon}</span>
-                  <span style={{
-                    fontSize: "0.8rem", fontWeight: 600,
-                    color: isActive ? "#111827" : "#374151",
-                  }}>{item.label}</span>
+                  {/* Hiển thị Icon, nếu nút được chọn thì nét vẽ dày hơn một chút */}
+                  <CategoryIcon size={16} strokeWidth={isActive ? 2.5 : 2} />
+                  {item.label}
                 </button>
               );
             })}
@@ -480,237 +380,48 @@ export default function BlindBoxPanel({
         </section>
 
         {/* ── DISTANCE ── */}
-        <section style={{ marginBottom: "1.5rem" }}>
+        <section style={{ marginBottom: "2.5rem" }}>
           <p style={{ ...sectionLabel, display: "flex", justifyContent: "space-between" }}>
             <span>Khoảng cách</span>
-            <span style={{ fontWeight: 800, color: "#111827" }}>{radius} KM</span>
+            <span style={{ color: "#0f172a" }}>{radius} KM</span>
           </p>
           <input type="range" min={0.5} max={100} step={0.5} value={radius}
             onChange={(e) => setRadius(Number(e.target.value))}
-            style={{ width: "100%", accentColor: "#111827", cursor: "pointer", height: "6px" }}
+            style={{ width: "100%", accentColor: "#0f172a", cursor: "pointer", height: "4px", background: "#e2e8f0", borderRadius: "4px" }}
           />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem", fontWeight: 500 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#eab308"}}></span> 500m
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span style={{color: "#ef4444"}}></span> 100km
-            </span>
-          </div>
         </section>
 
-        {/* ── GENERATE BUTTON ── */}
-        {error && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", borderRadius: "8px", padding: "0.625rem 0.875rem", fontSize: "0.8125rem", marginBottom: "0.75rem" }}>
-            {error}
-          </div>
-        )}
+        {/* ── BUTTONS ── */}
+        {error && <div style={{ background: "#fef2f2", color: "#b91c1c", borderRadius: "12px", padding: "1rem", fontSize: "0.8rem", marginBottom: "1rem" }}>{error}</div>}
+        
         <button
-          id="generate-blind-box"
-          onClick={handleSmartGenerate}
-          disabled={isGenerating || !userLocation}
+          onClick={handleSmartGenerate} disabled={isGenerating || !userLocation}
           style={{
-            width: "100%", padding: "0.875rem", borderRadius: "12px",
-            border: "none",
-            background: isGenerating || !userLocation
-              ? "#e2e8f0"
-              : "#111827",
+            width: "100%", padding: "1rem", borderRadius: "16px", border: "none",
+            background: isGenerating || !userLocation ? "#e2e8f0" : "#0f172a",
             color: isGenerating || !userLocation ? "#94a3b8" : "#fff",
-            fontSize: "1rem", fontWeight: 700,
+            fontSize: "0.9rem", fontWeight: 800, letterSpacing: "0.05em",
             cursor: !userLocation || isGenerating ? "not-allowed" : "pointer",
             transition: "all 0.2s ease",
-            boxShadow: isGenerating || !userLocation
-              ? "none"
-              : "0 4px 12px rgba(17, 24, 39, 0.25)",
           }}
-          onMouseDown={(e) => { if(!isGenerating && userLocation) e.currentTarget.style.transform = "scale(0.97)" }}
-          onMouseUp={(e) => e.currentTarget.style.transform = "scale(1)"}
         >
-          {isGenerating
-            ? "Đang tìm kiếm..."
-            : isSmartMode
-              ? "Tìm kiếm thông minh"
-              : "Lắc hộp mù"}
+          {isGenerating ? "ĐANG XỬ LÝ..." : isSmartMode ? "TÌM KIẾM" : "BẮT ĐẦU"}
         </button>
 
         <button
           onClick={() => setShowGroupRoom((prev) => !prev)}
           style={{
-            width: "100%",
-            marginTop: "0.75rem",
-            padding: "0.875rem",
-            borderRadius: "12px",
-            border: "1px solid #d1d5db",
-            background: "#ffffff",
-            color: "#111827",
-            fontSize: "1rem",
-            fontWeight: 700,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
+            width: "100%", marginTop: "0.75rem", padding: "1rem", borderRadius: "16px",
+            border: "1px solid #e2e8f0", background: "#fff", color: "#0f172a",
+            fontSize: "0.85rem", fontWeight: 700, cursor: "pointer", transition: "all 0.2s ease",
           }}
         >
-          {showGroupRoom ? "✖ Đóng tạo phòng" : "👥 Tạo phòng nhóm"}
+          {showGroupRoom ? "Đóng tạo phòng" : "Tạo phòng nhóm"}
         </button>
 
-        {showGroupRoom && (
-          <div style={{ marginTop: "0.75rem" }}>
-            <GroupRoom embedded />
-          </div>
-        )}
-
-        {/* ── RESULT READY (Blind Box) ── */}
-        {result && (
-          <div style={{ marginTop: "1.5rem" }}>
-            {!isRevealed ? (
-              // Hidden name state (Clue)
-              <div style={{ 
-                padding: "1.5rem", textAlign: "center", 
-                background: "linear-gradient(145deg, #1f2937, #0f172a)", 
-                color: "#f8fafc",
-                borderRadius: "16px",
-                position: "relative",
-                overflow: "hidden",
-                boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-                border: "1px solid #334155"
-              }}>
-                <h3 style={{ margin: "0 0 16px", fontSize: "1.15rem", color: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", fontWeight: 800 }}>
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#fbbf24" }}>
-                    <rect x="3" y="8" width="18" height="14" rx="2" />
-                    <path d="M12 5v3" />
-                    <path d="M19 12H5" />
-                    <path d="M12 12v10" />
-                    <path d="M8 8V5c0-1.1.9-2 2-2h4c1.1 0 2 .9 2 2v3" />
-                  </svg>
-                  Hộp mù đã sẵn sàng!
-                </h3>
-                <div style={{ 
-                  background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "12px",
-                  marginBottom: "1.25rem", border: "1px solid rgba(255,255,255,0.08)"
-                }}>
-                  <p style={{ fontSize: "0.875rem", color: "#cbd5e1", margin: 0, lineHeight: "1.6" }}>
-                    Địa điểm này cách bạn <strong style={{ color: "#fbbf24", fontSize: "1.05rem" }}>{userLocation ? haversineDist(userLocation.lat, userLocation.lng, result.lat, result.lng).toFixed(1) : "?"} km</strong>. <br/>
-                    Đã có <strong style={{ color: "#fff" }}>{result.reviews_count}</strong> người tham quan, đạt <strong style={{ color: "#fbbf24" }}>{result.rating}⭐</strong>.
-                  </p>
-                </div>
-                <button onClick={() => setIsRevealed(true)}
-                  style={{ 
-                    width: "100%", padding: "0.875rem", borderRadius: "10px", 
-                    background: "#f8fafc", 
-                    color: "#0f172a", border: "none", cursor: "pointer", fontSize: "0.9rem", fontWeight: 700,
-                    transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#e2e8f0"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.transform = "translateY(0)"; }}
-                  onMouseDown={(e) => e.currentTarget.style.transform = "scale(0.98)"}
-                  >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                  Mở khóa khám phá
-                </button>
-              </div>
-            ) : (
-              // Unlocked state
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.5s ease" }}>
-                {result.photo_url ? (
-                  <img src={result.photo_url} alt={result.name}
-                    style={{ width: "100%", height: "140px", objectFit: "cover", display: "block" }} />
-                ) : (
-                  <div style={{ width: "100%", height: "140px", background: "linear-gradient(135deg, #1e293b, #0f172a)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5, marginBottom: "8px" }}>
-                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                      <line x1="12" y1="22.08" x2="12" y2="12" />
-                    </svg>
-                    <span style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "2px" }}>ĐỊA ĐIỂM BÍ MẬT</span>
-                  </div>
-                )}
-                <div style={{ padding: "1rem" }}>
-                  <p style={{ margin: "0 0 0.35rem", fontSize: "1rem", fontWeight: 800, color: "#0f172a" }}>{result.name}</p>
-                  
-                  {/* Đã xóa phần || "Chưa rõ địa chỉ cụ thể", chỉ render khi result.address có tồn tại */}
-                  {result.address && (
-                    <p style={{ margin: "0 0 0.5rem", fontSize: "0.8125rem", color: "#64748b", lineHeight: "1.4" }}>{result.address}</p>
-                  )}
-                  
-                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8125rem", flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 600, color: "#eab308" }}>⭐ {result.rating?.toFixed(1)}</span>
-
-                    {/* Fallback Warning Mini Pill */}
-                    {typeof relaxLevel === "number" && relaxLevel > 0 && (
-                      <span style={{ position: "relative", display: "inline-flex" }}>
-                        <button
-                          onClick={() => setShowRelaxTooltip((v) => !v)}
-                          style={{
-                            background: "#fef3c7", border: "1px solid #fcd34d",
-                            borderRadius: "12px", padding: "1px 8px",
-                            fontSize: "0.7rem", fontWeight: 600, color: "#92400e",
-                            cursor: "pointer", lineHeight: "1.6",
-                          }}
-                        >
-                          ⚠️ Mở rộng tiêu chí
-                        </button>
-                        {showRelaxTooltip && (
-                          <div style={{
-                            position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
-                            transform: "translateX(-50%)", width: "200px",
-                            background: "#1e293b", color: "#f1f5f9",
-                            borderRadius: "8px", padding: "8px 10px",
-                            fontSize: "0.7rem", lineHeight: "1.5",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                            zIndex: 30, textAlign: "center",
-                            animation: "fadeIn 0.2s ease",
-                          }}>
-                            Kết quả chính xác quá ít nên hệ thống đã nới lỏng {relaxLevel} cấp tiêu chí lọc để tìm được địa điểm phù hợp nhất.
-                            <div style={{
-                              position: "absolute", bottom: "-4px", left: "50%",
-                              transform: "translateX(-50%) rotate(45deg)",
-                              width: "8px", height: "8px", background: "#1e293b",
-                            }} />
-                          </div>
-                        )}
-                      </span>
-                    )}
-
-                    <span style={{ color: "#cbd5e1" }}>|</span>
-                    <span style={{ color: "#64748b" }}>{result.reviews_count} đánh giá</span>
-                    <span style={{ color: "#cbd5e1" }}>|</span>
-                    
-                    {/* Đổi màu nền của category tag thành màu xám, chữ đen thay vì màu tím */}
-                    <span style={{ color: "#111827", fontWeight: 600, background: "#e5e7eb", padding: "2px 8px", borderRadius: "6px" }}>
-                      {CATEGORIES.find(c => c.value === result.category)?.label || result.category}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {showGroupRoom && <div style={{ marginTop: "1rem" }}><GroupRoom embedded /></div>}
+        
       </div>
-
-      {/* Inline CSS for animations */}
-      <style>{`
-        @keyframes badgeIn {
-          from { transform: scale(0.8); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        /* Custom scrollbar for the category grid */
-        div::-webkit-scrollbar {
-          height: 4px;
-        }
-        div::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        div::-webkit-scrollbar-thumb {
-          background: #d1d5db;
-          border-radius: 4px;
-        }
-      `}</style>
     </aside>
   );
 }
