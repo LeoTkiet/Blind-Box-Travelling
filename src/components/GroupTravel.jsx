@@ -12,10 +12,26 @@ export default function GroupRoom({ embedded = false }) {
   const [members, setMembers] = useState([]); 
   const [onlineCount, setOnlineCount] = useState(0); 
   const [openedUsers, setOpenedUsers] = useState({}); 
+  const [entryMode, setEntryMode] = useState(null);
   const channelRef = useRef(null);
 
-  
- 
+  const syncMembersFromPresence = (roomChannel) => {
+    const presenceState = roomChannel.presenceState();
+    const onlineUsers = Object.keys(presenceState).length;
+    setOnlineCount(onlineUsers);
+
+    const currentMembers = Object.entries(presenceState).map(([presenceKey, metas]) => {
+      const latestMeta = metas?.[metas.length - 1] ?? {};
+      return {
+        user_id: latestMeta.user_id || presenceKey,
+        joined_at: latestMeta.joined_at,
+        status: latestMeta.status || 'Đang chờ...',
+      };
+    });
+
+    setMembers(currentMembers);
+  };
+
   useEffect(() => {
     if (!supabase) return;
 
@@ -24,27 +40,28 @@ export default function GroupRoom({ embedded = false }) {
       if (error) {
         console.error('Lỗi đăng nhập ẩn danh:', error.message);
       } else if (data?.user) {
-        
         setUserId(data.user.id); 
       }
     };
     loginAnonymously();
   }, []);
 
-  
   const handleCreateRoom = () => {
     const newCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+    setEntryMode('host');
     setRoomCode(newCode);
   };
 
-  const handleJoinRoom = () => {
+ const handleJoinRoom = async () => {
     const normalizedCode = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-    if (normalizedCode.length === 5) {
-      setRoomCode(normalizedCode);
-    } else {
+    if (normalizedCode.length !== 5) {
       alert("Mã phòng phải có 5 ký tự!");
+      return;
     }
+
+    setEntryMode('guest');
+    setRoomCode(normalizedCode);
   };
 
   const handleOpenBlindBox = async () => {
@@ -52,7 +69,6 @@ export default function GroupRoom({ embedded = false }) {
 
     const openedAt = new Date().toISOString();
 
-    // Cập nhật UI local ngay lập tức 
     setOpenedUsers((prev) => ({ ...prev, [userId]: openedAt }));
 
     await channelRef.current.track({
@@ -71,12 +87,9 @@ export default function GroupRoom({ embedded = false }) {
     });
   };
 
-  //  KẾT NỐI REALTIME 
   useEffect(() => {
-   
     if (!roomCode || !userId || !supabase) return;
 
-    
     const roomChannel = supabase.channel(`room_${roomCode}`, {
       config: {
         presence: { key: userId }, 
@@ -85,22 +98,16 @@ export default function GroupRoom({ embedded = false }) {
 
     channelRef.current = roomChannel;
 
-   
     roomChannel.on('presence', { event: 'sync' }, () => {
-      const presenceState = roomChannel.presenceState();
-      const onlineUsers = Object.keys(presenceState).length;
-      setOnlineCount(onlineUsers);
+      syncMembersFromPresence(roomChannel);
+    });
 
-      const currentMembers = Object.entries(presenceState).map(([presenceKey, metas]) => {
-        const latestMeta = metas?.[metas.length - 1] ?? {};
-        return {
-          user_id: latestMeta.user_id || presenceKey,
-          joined_at: latestMeta.joined_at,
-          status: latestMeta.status || 'Đang chờ...',
-        };
-      });
+    roomChannel.on('presence', { event: 'join' }, () => {
+      syncMembersFromPresence(roomChannel);
+    });
 
-      setMembers(currentMembers);
+    roomChannel.on('presence', { event: 'leave' }, () => {
+      syncMembersFromPresence(roomChannel);
     });
 
     roomChannel.on('broadcast', { event: 'blind_box_opened' }, ({ payload }) => {
@@ -123,29 +130,44 @@ export default function GroupRoom({ embedded = false }) {
       );
     });
 
-    
     roomChannel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        
         await roomChannel.track({
           user_id: userId,
           joined_at: new Date().toLocaleTimeString(),
           status: 'Đang chờ...',
         });
+
+        syncMembersFromPresence(roomChannel);
+
+        // Nếu vào bằng mã mà trong phòng chỉ có chính mình, xem như phòng không tồn tại.
+        if (entryMode === 'guest') {
+          setTimeout(() => {
+            const presenceState = roomChannel.presenceState();
+            const hasOtherMembers = Object.keys(presenceState).some((key) => key !== userId);
+
+            if (!hasOtherMembers) {
+              alert("❌ Phòng không tồn tại hoặc mọi người đã thoát hết!");
+              setRoomCode('');
+              setMembers([]);
+              setOnlineCount(0);
+              setOpenedUsers({});
+              setEntryMode(null);
+              supabase.removeChannel(roomChannel);
+            }
+          }, 1200);
+        }
       }
     });
 
-    // CLEANUP FUNCTION 
-    
     return () => {
       channelRef.current = null;
-      setOnlineCount(0);
+      setOnlisneCount(0);
       setOpenedUsers({});
       supabase.removeChannel(roomChannel); 
     };
-  }, [roomCode, userId]); 
+  }, [roomCode, userId, entryMode]); 
 
-  // UI
   return (
     <div className={`${embedded ? 'bg-gray-50 py-4 px-0' : 'min-h-screen bg-gray-50 py-10 px-4'} flex flex-col items-center font-sans`}>
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6">
@@ -159,7 +181,6 @@ export default function GroupRoom({ embedded = false }) {
           </div>
         )}
 
-        {/* Nếu chưa có phòng -> Hiển thị màn hình Tạo/Vào phòng */}
         {!roomCode ? (
           <div className="space-y-6">
             <button 
@@ -176,10 +197,11 @@ export default function GroupRoom({ embedded = false }) {
             </div>
 
             <div className="flex gap-2">
+              {/* ĐÃ UPDATE UI: Thẻ input chữ đen, rõ nét, canh giữa */}
               <input 
                 type="text" 
                 placeholder="Nhập mã phòng (5 ký tự)" 
-                className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-2 uppercase focus:border-indigo-500 focus:outline-none"
+                className="flex-1 border-2 border-gray-300 rounded-xl px-4 py-3 uppercase focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-100 text-gray-900 font-bold tracking-widest placeholder-gray-400 text-center"
                 value={inputCode}
                 onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                 maxLength={5}
@@ -193,7 +215,6 @@ export default function GroupRoom({ embedded = false }) {
             </div>
           </div>
         ) : (
-          /* Nếu đã vào phòng -> Hiển thị phòng chờ */
           <div className="space-y-4">
             <div className="bg-indigo-50 border-2 border-indigo-100 rounded-xl p-4 text-center">
               <p className="text-sm text-indigo-400 font-semibold mb-1">MÃ PHÒNG CỦA BẠN</p>
@@ -242,6 +263,7 @@ export default function GroupRoom({ embedded = false }) {
                 setMembers([]);
                 setOnlineCount(0);
                 setOpenedUsers({});
+                setEntryMode(null);
               }}
               className="w-full mt-4 text-gray-500 hover:text-red-500 text-sm font-semibold transition"
             >
