@@ -162,7 +162,7 @@ export default function GroupRoom({ embedded = false }) {
 
     return () => {
       channelRef.current = null;
-      setOnlisneCount(0);
+      setOnlineCount(0);
       setOpenedUsers({});
       supabase.removeChannel(roomChannel); 
     };
