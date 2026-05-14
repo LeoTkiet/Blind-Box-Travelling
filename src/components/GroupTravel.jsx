@@ -61,10 +61,10 @@ function ConflictModal({ conflict, onPick }) {
               onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bgSubtle; }}
             >
               <p style={{ margin: '0 0 2px', fontSize: '0.82rem', fontWeight: 700, color: T.text }}>
-                🎁 {opt.result?.name ?? 'Không rõ'}
+                🎁 Hộp mù #{i + 1}
               </p>
               <p style={{ margin: 0, fontSize: '0.72rem', color: T.textMuted }}>
-                {opt.result?.category ?? ''}{opt.result?.address ? ' · ' + opt.result.address : ''}
+                {opt.result?.category ?? 'Không rõ loại'}{opt.result?.address ? ' · ' + opt.result.address : ''}
               </p>
               <p style={{ margin: '4px 0 0', fontSize: '0.68rem', color: T.textLight }}>
                 {opt.isMe ? 'Kết quả của bạn' : `Của thành viên …${opt.shortId}`}
@@ -106,8 +106,8 @@ function MemberRow({ member, index, userId, memberResults }) {
             {isMe ? 'Bạn' : `Thành viên …${shortId}`}
           </p>
           {result ? (
-            <p style={{ margin: 0, fontSize: '0.68rem', color: T.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              🎁 {result.name}
+            <p style={{ margin: 0, fontSize: '0.68rem', color: T.cyan }}>
+              🎁 Đã roll hộp mù
             </p>
           ) : (
             <p style={{ margin: 0, fontSize: '0.68rem', color: T.textLight }}>Đang chờ roll...</p>
