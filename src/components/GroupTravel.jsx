@@ -5,448 +5,312 @@ import { createClient } from '@/utils/supabase/client';
 
 const supabase = createClient();
 
-// ─── Design tokens (matches BlindBoxPanel / app theme) ────────────────────────
-const TOKEN = {
-  bg:         '#ffffff',
-  bgSubtle:   '#f8fafc',
-  bgMuted:    '#f1f5f9',
-  border:     '#e2e8f0',
-  borderDark: '#cbd5e1',
-  text:       '#0f172a',
-  textMuted:  '#64748b',
-  textLight:  '#94a3b8',
-  accent:     '#0f172a',
-  accentHov:  '#1e293b',
-  cyan:       '#06b6d4',
-  cyanLight:  '#e0f7fa',
-  green:      '#16a34a',
-  greenLight: '#dcfce7',
-  amber:      '#d97706',
-  amberLight: '#fef3c7',
-  red:        '#dc2626',
+const CONFLICT_WINDOW_MS = 5000;
+
+// ─── Design tokens ─────────────────────────────────────────────────────────────
+const T = {
+  bg: '#ffffff', bgSubtle: '#f8fafc', bgMuted: '#f1f5f9',
+  border: '#e2e8f0', borderDark: '#cbd5e1',
+  text: '#0f172a', textMuted: '#64748b', textLight: '#94a3b8',
+  accent: '#0f172a', accentHov: '#1e293b',
+  cyan: '#06b6d4', cyanLight: '#cffafe',
+  green: '#16a34a', greenLight: '#dcfce7',
+  red: '#dc2626',
 };
 
 const chip = (extra = {}) => ({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '4px',
-  padding: '3px 10px',
-  borderRadius: '20px',
-  fontSize: '0.7rem',
-  fontWeight: 700,
-  letterSpacing: '0.04em',
-  ...extra,
+  display: 'inline-flex', alignItems: 'center', gap: '4px',
+  padding: '3px 10px', borderRadius: '20px',
+  fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.04em', ...extra,
 });
 
 const sectionLabel = {
-  margin: '0 0 0.6rem',
-  fontSize: '0.62rem',
-  fontWeight: 800,
-  color: TOKEN.textMuted,
-  textTransform: 'uppercase',
-  letterSpacing: '0.15em',
+  margin: '0 0 0.5rem', fontSize: '0.62rem', fontWeight: 800,
+  color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.15em',
 };
 
-const card = {
-  background: TOKEN.bgSubtle,
-  border: `1px solid ${TOKEN.border}`,
-  borderRadius: '14px',
-  padding: '14px 16px',
-};
-
-const btnPrimary = (disabled = false) => ({
-  width: '100%',
-  padding: '0.9rem',
-  borderRadius: '14px',
-  border: 'none',
-  background: disabled ? TOKEN.bgMuted : TOKEN.accent,
-  color: disabled ? TOKEN.textLight : '#ffffff',
-  fontSize: '0.85rem',
-  fontWeight: 800,
-  letterSpacing: '0.05em',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  transition: 'all 0.2s ease',
-});
-
-const btnOutline = {
-  width: '100%',
-  padding: '0.85rem',
-  borderRadius: '14px',
-  border: `1px solid ${TOKEN.border}`,
-  background: TOKEN.bg,
-  color: TOKEN.text,
-  fontSize: '0.82rem',
-  fontWeight: 700,
-  cursor: 'pointer',
-  transition: 'all 0.2s ease',
-};
-
-// ─── Notification Toast ────────────────────────────────────────────────────────
-function SyncNotification({ notification, onAccept, onDismiss }) {
-  if (!notification) return null;
-
+// ─── Conflict Modal ─────────────────────────────────────────────────────────────
+function ConflictModal({ conflict, onPick }) {
+  if (!conflict) return null;
   return (
     <div style={{
-      position: 'fixed',
-      bottom: '24px',
-      right: '24px',
-      zIndex: 9999,
-      maxWidth: '340px',
-      width: 'calc(100vw - 48px)',
-      background: TOKEN.bg,
-      border: `1px solid ${TOKEN.borderDark}`,
-      borderRadius: '16px',
-      boxShadow: '0 20px 60px rgba(0,0,0,0.14)',
-      padding: '18px 20px',
-      animation: 'slideInNotif 0.35s cubic-bezier(0.2,0.8,0.2,1)',
+      position: 'fixed', inset: 0, zIndex: 10000,
+      background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
     }}>
-      <style>{`
-        @keyframes slideInNotif {
-          from { opacity: 0; transform: translateY(20px) scale(0.96); }
-          to   { opacity: 1; transform: translateY(0)   scale(1);    }
-        }
-      `}</style>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '14px' }}>
-        <div style={{
-          width: '36px', height: '36px', borderRadius: '10px',
-          background: TOKEN.cyanLight, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0, fontSize: '1.1rem',
-        }}>🎁</div>
-        <div>
-          <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700, color: TOKEN.text, lineHeight: 1.4 }}>
-            Đồng bộ hộp mù
-          </p>
-          <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: TOKEN.textMuted, lineHeight: 1.5 }}>
-            Bạn có muốn đồng bộ hộp mù của người dùng{' '}
-            <span style={{ fontWeight: 700, color: TOKEN.text }}>
-              {notification.shortId}
-            </span>{' '}
-            không?
-          </p>
+      <div style={{
+        background: T.bg, borderRadius: '20px', border: `1px solid ${T.border}`,
+        boxShadow: '0 25px 80px rgba(0,0,0,0.18)', padding: '24px', maxWidth: '380px', width: '100%',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+          <span style={{ fontSize: '1.2rem' }}>⚡</span>
+          <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: T.text }}>Xung đột hộp mù</p>
         </div>
-      </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button
-          onClick={onAccept}
-          style={{
-            flex: 1, padding: '0.6rem', borderRadius: '10px', border: 'none',
-            background: TOKEN.accent, color: '#fff', fontSize: '0.8rem', fontWeight: 700,
-            cursor: 'pointer', transition: 'all 0.2s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = TOKEN.accentHov}
-          onMouseLeave={e => e.currentTarget.style.background = TOKEN.accent}
-        >
-          ✓ Đồng bộ
-        </button>
-        <button
-          onClick={onDismiss}
-          style={{
-            flex: 1, padding: '0.6rem', borderRadius: '10px',
-            border: `1px solid ${TOKEN.border}`, background: TOKEN.bg,
-            color: TOKEN.textMuted, fontSize: '0.8rem', fontWeight: 700,
-            cursor: 'pointer', transition: 'all 0.2s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = TOKEN.bgMuted; }}
-          onMouseLeave={e => { e.currentTarget.style.background = TOKEN.bg; }}
-        >
-          Bỏ qua
-        </button>
+        <p style={{ margin: '0 0 18px', fontSize: '0.78rem', color: T.textMuted, lineHeight: 1.6 }}>
+          Nhiều người cùng roll hộp mù. Là trưởng phòng, hãy chọn kết quả cho cả nhóm:
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {conflict.options.map((opt, i) => (
+            <button key={i} onClick={() => onPick(opt.result)}
+              style={{
+                padding: '12px 16px', borderRadius: '12px', cursor: 'pointer',
+                border: `1.5px solid ${T.border}`, background: T.bgSubtle,
+                textAlign: 'left', transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.bg; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bgSubtle; }}
+            >
+              <p style={{ margin: '0 0 2px', fontSize: '0.82rem', fontWeight: 700, color: T.text }}>
+                🎁 {opt.result?.name ?? 'Không rõ'}
+              </p>
+              <p style={{ margin: 0, fontSize: '0.72rem', color: T.textMuted }}>
+                {opt.result?.category ?? ''}{opt.result?.address ? ' · ' + opt.result.address : ''}
+              </p>
+              <p style={{ margin: '4px 0 0', fontSize: '0.68rem', color: T.textLight }}>
+                {opt.isMe ? 'Kết quả của bạn' : `Của thành viên …${opt.shortId}`}
+              </p>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Member list item ──────────────────────────────────────────────────────────
-function MemberRow({ member, index, userId, openedUsers, syncedUsers }) {
+// ─── Member Row ─────────────────────────────────────────────────────────────────
+function MemberRow({ member, index, userId, memberResults }) {
   const isMe = member.user_id === userId;
-  const hasOpened = Boolean(openedUsers[member.user_id]);
-  const hasSynced = Boolean(syncedUsers[member.user_id]);
+  const result = memberResults[member.user_id];
   const shortId = member.user_id?.slice(-6)?.toUpperCase() ?? `#${index + 1}`;
 
   return (
     <li style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '10px 12px', borderRadius: '12px',
-      background: isMe ? '#f0fdf4' : TOKEN.bgSubtle,
-      border: `1px solid ${isMe ? '#bbf7d0' : TOKEN.border}`,
-      gap: '10px',
+      padding: '10px 12px', borderRadius: '12px', gap: '10px',
+      background: isMe ? '#f0fdf4' : T.bgSubtle,
+      border: `1px solid ${isMe ? '#bbf7d0' : T.border}`,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        {/* Avatar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
         <div style={{
-          width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
-          background: isMe ? TOKEN.accent : TOKEN.bgMuted,
-          border: `2px solid ${isMe ? TOKEN.accent : TOKEN.borderDark}`,
+          width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
+          background: isMe ? T.accent : T.bgMuted,
+          border: `2px solid ${isMe ? T.accent : T.borderDark}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.75rem', fontWeight: 800,
-          color: isMe ? '#fff' : TOKEN.textMuted,
+          fontSize: '0.72rem', fontWeight: 800,
+          color: isMe ? '#fff' : T.textMuted,
         }}>
           {index + 1}
         </div>
-        <div>
-          <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 700, color: TOKEN.text }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: T.text }}>
             {isMe ? 'Bạn' : `Thành viên …${shortId}`}
-            {isMe && <span style={{ ...chip({ background: TOKEN.greenLight, color: TOKEN.green }), marginLeft: '6px' }}>Bạn</span>}
           </p>
-          {member.joined_at && (
-            <p style={{ margin: 0, fontSize: '0.68rem', color: TOKEN.textLight }}>
-              Tham gia lúc {member.joined_at}
+          {result ? (
+            <p style={{ margin: 0, fontSize: '0.68rem', color: T.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              🎁 {result.name}
             </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: '0.68rem', color: T.textLight }}>Đang chờ roll...</p>
           )}
         </div>
       </div>
-
-      {/* Status chip */}
-      {hasOpened ? (
-        <span style={chip({ background: TOKEN.cyanLight, color: TOKEN.cyan })}>
-          🎁 Đã mở
-          {hasSynced && !isMe && ' · Đã đồng bộ'}
-        </span>
-      ) : (
-        <span style={chip({ background: TOKEN.bgMuted, color: TOKEN.textMuted })}>
-          ⏳ Đang chờ
-        </span>
-      )}
+      {result
+        ? <span style={chip({ background: T.cyanLight, color: T.cyan, flexShrink: 0 })}>Đã roll</span>
+        : <span style={chip({ background: T.bgMuted, color: T.textMuted, flexShrink: 0 })}>⏳</span>
+      }
     </li>
   );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
-export default function GroupRoom({ embedded = false, onSyncBlindBox }) {
+// ─── Main Component ─────────────────────────────────────────────────────────────
+export default function GroupRoom({ embedded = false, currentResult, onSyncBlindBox }) {
   const [userId, setUserId]           = useState(null);
   const [roomCode, setRoomCode]       = useState('');
   const [inputCode, setInputCode]     = useState('');
   const [members, setMembers]         = useState([]);
   const [onlineCount, setOnlineCount] = useState(0);
-  const [openedUsers, setOpenedUsers] = useState({});
-  const [syncedUsers, setSyncedUsers] = useState({});
   const [entryMode, setEntryMode]     = useState(null);
+  const [memberResults, setMemberResults] = useState({}); // { userId: LocationResult }
+  const [conflict, setConflict]       = useState(null);   // { options: [{result, isMe, shortId}] }
 
-  // Blind-box payload broadcast
-  const [syncNotification, setSyncNotification] = useState(null); // { userId, shortId, payload }
+  const channelRef      = useRef(null);
+  const myRollTimeRef   = useRef(null);   // timestamp of my last roll
+  const prevResultRef   = useRef(null);   // last broadcast result
 
-  const channelRef = useRef(null);
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const syncMembersFromPresence = useCallback((roomChannel) => {
-    const presenceState = roomChannel.presenceState();
-    setOnlineCount(Object.keys(presenceState).length);
-
-    const currentMembers = Object.entries(presenceState).map(([presenceKey, metas]) => {
-      const latestMeta = metas?.[metas.length - 1] ?? {};
-      return {
-        user_id:   latestMeta.user_id || presenceKey,
-        joined_at: latestMeta.joined_at,
-        status:    latestMeta.status || 'Đang chờ...',
-        lat:       latestMeta.lat,
-        lng:       latestMeta.lng,
-      };
-    });
-
-    setMembers(currentMembers);
+  // ── Sync presence ──────────────────────────────────────────────────────────
+  const syncMembers = useCallback((ch) => {
+    const state = ch.presenceState();
+    setOnlineCount(Object.keys(state).length);
+    setMembers(Object.entries(state).map(([key, metas]) => {
+      const m = metas?.[metas.length - 1] ?? {};
+      return { user_id: m.user_id || key, joined_at: m.joined_at, status: m.status || '' };
+    }));
   }, []);
 
   const leaveRoom = useCallback(() => {
-    setRoomCode('');
-    setMembers([]);
-    setOnlineCount(0);
-    setOpenedUsers({});
-    setSyncedUsers({});
-    setSyncNotification(null);
-    setEntryMode(null);
+    setRoomCode(''); setMembers([]); setOnlineCount(0);
+    setMemberResults({}); setConflict(null); setEntryMode(null);
+    myRollTimeRef.current = null; prevResultRef.current = null;
   }, []);
 
-  // ── Anonymous login ────────────────────────────────────────────────────────
+  // ── Anonymous auth ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!supabase) return;
-    (async () => {
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (!error && data?.user) setUserId(data.user.id);
-    })();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) { setUserId(data.user.id); return; }
+      supabase.auth.signInAnonymously().then(({ data: d }) => {
+        if (d?.user) setUserId(d.user.id);
+      });
+    });
   }, []);
 
-  // ── Room actions ───────────────────────────────────────────────────────────
-  const handleCreateRoom = () => {
-    const newCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-    setEntryMode('host');
-    setRoomCode(newCode);
-  };
+  // ── Watch currentResult: auto-broadcast when user rolls ────────────────────
+  useEffect(() => {
+    if (!currentResult || !roomCode || !channelRef.current || !userId) return;
+    if (currentResult === prevResultRef.current) return;
+    prevResultRef.current = currentResult;
+    myRollTimeRef.current = Date.now();
 
-  const handleJoinRoom = () => {
-    const normalized = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (normalized.length !== 5) { alert('Mã phòng phải có 5 ký tự!'); return; }
-    setEntryMode('guest');
-    setRoomCode(normalized);
-  };
-
-  const handleOpenBlindBox = async (payload = null) => {
-    if (!channelRef.current || !userId) return;
-
-    const openedAt = new Date().toISOString();
-    setOpenedUsers(prev => ({ ...prev, [userId]: openedAt }));
-
-    await channelRef.current.track({
-      user_id:   userId,
+    // update own presence
+    channelRef.current.track({
+      user_id: userId,
       joined_at: new Date().toLocaleTimeString(),
-      status:    'Đã mở hộp',
+      status: 'Đã roll',
     });
 
-    await channelRef.current.send({
-      type:    'broadcast',
-      event:   'blind_box_opened',
-      payload: {
-        user_id:    userId,
-        opened_at:  openedAt,
-        blind_box:  payload, // optional result payload
-      },
+    // mark own result locally
+    setMemberResults(prev => ({ ...prev, [userId]: currentResult }));
+
+    // broadcast to room
+    channelRef.current.send({
+      type: 'broadcast',
+      event: 'blind_box_result',
+      payload: { user_id: userId, result: currentResult, ts: Date.now() },
     });
-  };
+  }, [currentResult, roomCode, userId]);
 
   // ── Realtime channel ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomCode || !userId || !supabase) return;
 
-    const roomChannel = supabase.channel(`room_${roomCode}`, {
+    const ch = supabase.channel(`room_${roomCode}`, {
       config: { presence: { key: userId } },
     });
+    channelRef.current = ch;
 
-    channelRef.current = roomChannel;
+    ch.on('presence', { event: 'sync'  }, () => syncMembers(ch));
+    ch.on('presence', { event: 'join'  }, () => syncMembers(ch));
+    ch.on('presence', { event: 'leave' }, () => syncMembers(ch));
 
-    roomChannel.on('presence', { event: 'sync'  }, () => syncMembersFromPresence(roomChannel));
-    roomChannel.on('presence', { event: 'join'  }, () => syncMembersFromPresence(roomChannel));
-    roomChannel.on('presence', { event: 'leave' }, () => syncMembersFromPresence(roomChannel));
+    // ── Someone rolled a blind box ──
+    ch.on('broadcast', { event: 'blind_box_result' }, ({ payload }) => {
+      const { user_id: sender, result, ts } = payload;
+      if (!sender || sender === userId) return;
 
-    // ── Broadcast: blind box opened ──────────────────────────────────────────
-    roomChannel.on('broadcast', { event: 'blind_box_opened' }, ({ payload }) => {
-      const openedUserId = payload?.user_id;
-      const openedAt     = payload?.opened_at;
-      const blindBox     = payload?.blind_box;
-      const shortId      = openedUserId?.slice(-6)?.toUpperCase() ?? '??????';
+      // Track their result in member list
+      setMemberResults(prev => ({ ...prev, [sender]: result }));
 
-      if (!openedUserId || openedUserId === userId) return;
+      const myTs = myRollTimeRef.current;
+      const isConflict = myTs && Math.abs(ts - myTs) < CONFLICT_WINDOW_MS;
 
-      // Update opened state
-      setOpenedUsers(prev => ({ ...prev, [openedUserId]: openedAt || new Date().toISOString() }));
-      setMembers(prev => prev.map(m =>
-        m.user_id === openedUserId ? { ...m, status: 'Đã mở hộp' } : m
-      ));
-
-      // Show sync notification
-      setSyncNotification({ userId: openedUserId, shortId, payload: blindBox });
-    });
-
-    // ── Broadcast: location update ───────────────────────────────────────────
-    roomChannel.on('broadcast', { event: 'location_update' }, ({ payload }) => {
-      const { user_id: uid, lat, lng } = payload;
-      setMembers(prev => prev.map(m =>
-        m.user_id === uid ? { ...m, lat, lng } : m
-      ));
-    });
-
-    roomChannel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await roomChannel.track({
-          user_id:   userId,
-          joined_at: new Date().toLocaleTimeString(),
-          status:    'Đang chờ...',
-        });
-
-        syncMembersFromPresence(roomChannel);
-
-        if (entryMode === 'guest') {
-          setTimeout(() => {
-            const presenceState = roomChannel.presenceState();
-            const hasOthers = Object.keys(presenceState).some(k => k !== userId);
-            if (!hasOthers) {
-              alert('❌ Phòng không tồn tại hoặc mọi người đã thoát hết!');
-              leaveRoom();
-              supabase.removeChannel(roomChannel);
-            }
-          }, 1200);
+      if (isConflict) {
+        // Only the host resolves — non-host waits for conflict_resolved
+        if (entryMode === 'host') {
+          const myResult = prevResultRef.current;
+          const shortId  = sender.slice(-6).toUpperCase();
+          setConflict({
+            options: [
+              { result: myResult, isMe: true,  shortId: 'Bạn' },
+              { result,           isMe: false, shortId },
+            ],
+          });
         }
+      } else {
+        // No conflict — auto-apply to everyone
+        onSyncBlindBox?.(result);
+      }
+    });
+
+    // ── Host broadcast resolved winner ──
+    ch.on('broadcast', { event: 'conflict_resolved' }, ({ payload }) => {
+      const { result } = payload;
+      setConflict(null);
+      myRollTimeRef.current = null;
+      onSyncBlindBox?.(result);
+    });
+
+    ch.subscribe(async (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      await ch.track({
+        user_id: userId,
+        joined_at: new Date().toLocaleTimeString(),
+        status: 'Đang chờ...',
+      });
+      syncMembers(ch);
+
+      if (entryMode === 'guest') {
+        setTimeout(() => {
+          const hasOthers = Object.keys(ch.presenceState()).some(k => k !== userId);
+          if (!hasOthers) {
+            alert('❌ Phòng không tồn tại hoặc mọi người đã thoát hết!');
+            leaveRoom();
+            supabase.removeChannel(ch);
+          }
+        }, 1400);
       }
     });
 
     return () => {
       channelRef.current = null;
-      setOnlineCount(0);
-      setOpenedUsers({});
-      setSyncedUsers({});
-      setSyncNotification(null);
-      supabase.removeChannel(roomChannel);
+      supabase.removeChannel(ch);
     };
-  }, [roomCode, userId, entryMode, syncMembersFromPresence, leaveRoom]);
+  }, [roomCode, userId, entryMode, syncMembers, leaveRoom, onSyncBlindBox]);
 
-  // ── Broadcast own location whenever it changes ─────────────────────────────
-  useEffect(() => {
-    if (!channelRef.current || !userId) return;
-    if (!navigator.geolocation) return;
+  // ── Host picks winner ──────────────────────────────────────────────────────
+  const handlePickWinner = useCallback(async (result) => {
+    setConflict(null);
+    myRollTimeRef.current = null;
+    onSyncBlindBox?.(result);
+    await channelRef.current?.send({
+      type: 'broadcast',
+      event: 'conflict_resolved',
+      payload: { result },
+    });
+  }, [onSyncBlindBox]);
 
-    const watchId = navigator.geolocation.watchPosition(pos => {
-      const { latitude: lat, longitude: lng } = pos.coords;
-      channelRef.current?.track({
-        user_id:   userId,
-        joined_at: new Date().toLocaleTimeString(),
-        status:    openedUsers[userId] ? 'Đã mở hộp' : 'Đang chờ...',
-        lat,
-        lng,
-      });
-      channelRef.current?.send({
-        type:    'broadcast',
-        event:   'location_update',
-        payload: { user_id: userId, lat, lng },
-      });
-    }, null, { enableHighAccuracy: true, maximumAge: 5000 });
+  // ── Room entry ─────────────────────────────────────────────────────────────
+  const handleCreateRoom = () => {
+    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+    setEntryMode('host');
+    setRoomCode(code);
+  };
 
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [roomCode, userId, openedUsers]);
-
-  // ── Sync notification handlers ─────────────────────────────────────────────
-  const handleAcceptSync = useCallback(() => {
-    if (!syncNotification) return;
-    setSyncedUsers(prev => ({ ...prev, [syncNotification.userId]: true }));
-    if (syncNotification.payload && onSyncBlindBox) {
-      onSyncBlindBox(syncNotification.payload);
-    }
-    setSyncNotification(null);
-  }, [syncNotification, onSyncBlindBox]);
-
-  const handleDismissSync = useCallback(() => {
-    setSyncNotification(null);
-  }, []);
+  const handleJoinRoom = () => {
+    const code = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length !== 5) { alert('Mã phòng phải có 5 ký tự!'); return; }
+    setEntryMode('guest');
+    setRoomCode(code);
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const hasLocation = members.some(m => m.user_id !== userId && m.lat);
-
   return (
     <>
-      {/* ── Sync Toast Notification ── */}
-      <SyncNotification
-        notification={syncNotification}
-        onAccept={handleAcceptSync}
-        onDismiss={handleDismissSync}
-      />
+      <ConflictModal conflict={conflict} onPick={handlePickWinner} />
 
       <div style={{
         fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-        background: TOKEN.bg,
-        borderRadius: '16px',
-        border: `1px solid ${TOKEN.border}`,
-        overflow: 'hidden',
+        background: T.bg, borderRadius: '16px',
+        border: `1px solid ${T.border}`, overflow: 'hidden',
       }}>
-
-        {/* ── Header ── */}
+        {/* Header */}
         <div style={{
-          padding: '14px 18px',
-          borderBottom: `1px solid ${TOKEN.border}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: TOKEN.bgSubtle,
+          padding: '12px 18px', borderBottom: `1px solid ${T.border}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: T.bgSubtle,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '1rem' }}>👥</span>
-            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: TOKEN.text, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            <span>👥</span>
+            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: T.text, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               Phòng Nhóm
             </span>
           </div>
@@ -454,174 +318,108 @@ export default function GroupRoom({ embedded = false, onSyncBlindBox }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{
                 width: '7px', height: '7px', borderRadius: '50%',
-                background: TOKEN.green,
-                boxShadow: `0 0 0 3px ${TOKEN.greenLight}`,
+                background: T.green, boxShadow: `0 0 0 3px ${T.greenLight}`,
                 display: 'inline-block',
               }} />
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: TOKEN.textMuted }}>
-                {onlineCount} online
-              </span>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: T.textMuted }}>{onlineCount} online</span>
             </div>
           )}
         </div>
 
-        {/* ── Body ── */}
-        <div style={{ padding: '18px' }}>
+        {/* Body */}
+        <div style={{ padding: '16px' }}>
           {!supabase && (
-            <div style={{
-              marginBottom: '14px', borderRadius: '10px',
-              border: `1px solid #fecaca`, background: '#fef2f2',
-              padding: '10px 14px', fontSize: '0.78rem', color: TOKEN.red,
-            }}>
-              Thiếu cấu hình Supabase. Hãy thêm NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_ANON_KEY trong .env.local.
+            <div style={{ marginBottom: '12px', borderRadius: '10px', border: '1px solid #fecaca', background: '#fef2f2', padding: '10px 14px', fontSize: '0.76rem', color: T.red }}>
+              Thiếu cấu hình Supabase (.env.local).
             </div>
           )}
 
           {!roomCode ? (
-            /* ── Entry screen ── */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <button
-                onClick={handleCreateRoom}
-                style={btnPrimary()}
-                onMouseEnter={e => e.currentTarget.style.background = TOKEN.accentHov}
-                onMouseLeave={e => e.currentTarget.style.background = TOKEN.accent}
+            // ── Entry screen ──
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button onClick={handleCreateRoom}
+                style={{ width: '100%', padding: '0.85rem', borderRadius: '12px', border: 'none', background: T.accent, color: '#fff', fontSize: '0.83rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.background = T.accentHov}
+                onMouseLeave={e => e.currentTarget.style.background = T.accent}
               >
                 ✨ Tạo phòng mới
               </button>
 
-              {/* Divider */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0' }}>
-                <div style={{ flex: 1, height: '1px', background: TOKEN.border }} />
-                <span style={{ fontSize: '0.72rem', color: TOKEN.textLight, fontWeight: 600 }}>hoặc</span>
-                <div style={{ flex: 1, height: '1px', background: TOKEN.border }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ flex: 1, height: '1px', background: T.border }} />
+                <span style={{ fontSize: '0.7rem', color: T.textLight, fontWeight: 600 }}>hoặc</span>
+                <div style={{ flex: 1, height: '1px', background: T.border }} />
               </div>
 
-              {/* Join room */}
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  placeholder="Mã phòng (5 ký tự)"
+                <input type="text" placeholder="Mã phòng (5 ký tự)"
                   value={inputCode}
                   onChange={e => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                   maxLength={5}
                   style={{
-                    flex: 1, padding: '0.8rem 1rem', borderRadius: '12px',
-                    border: `1.5px solid ${TOKEN.border}`, background: TOKEN.bgSubtle,
+                    flex: 1, padding: '0.75rem 1rem', borderRadius: '10px',
+                    border: `1.5px solid ${T.border}`, background: T.bgSubtle,
                     fontSize: '0.85rem', fontWeight: 800, letterSpacing: '0.2em',
-                    color: TOKEN.text, outline: 'none', textAlign: 'center',
-                    textTransform: 'uppercase', transition: 'all 0.2s',
+                    color: T.text, outline: 'none', textAlign: 'center', textTransform: 'uppercase',
                   }}
-                  onFocus={e => { e.currentTarget.style.borderColor = TOKEN.accent; e.currentTarget.style.background = TOKEN.bg; }}
-                  onBlur={e => { e.currentTarget.style.borderColor = TOKEN.border; e.currentTarget.style.background = TOKEN.bgSubtle; }}
+                  onFocus={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.bg; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bgSubtle; }}
                 />
-                <button
-                  onClick={handleJoinRoom}
-                  style={{
-                    padding: '0.8rem 1.1rem', borderRadius: '12px',
-                    background: TOKEN.accent, color: '#fff', border: 'none',
-                    fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = TOKEN.accentHov}
-                  onMouseLeave={e => e.currentTarget.style.background = TOKEN.accent}
+                <button onClick={handleJoinRoom}
+                  style={{ padding: '0.75rem 1rem', borderRadius: '10px', background: T.accent, color: '#fff', border: 'none', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.accentHov}
+                  onMouseLeave={e => e.currentTarget.style.background = T.accent}
                 >
                   Vào
                 </button>
               </div>
             </div>
           ) : (
-            /* ── Room screen ── */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            // ── Room screen ──
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Room code */}
+              <div style={{ background: T.bgMuted, border: `1px solid ${T.border}`, borderRadius: '12px', padding: '12px 16px', textAlign: 'center' }}>
+                <p style={{ ...sectionLabel, textAlign: 'center', margin: '0 0 4px' }}>Mã phòng</p>
+                <p style={{ margin: 0, fontSize: '1.9rem', fontWeight: 900, color: T.text, letterSpacing: '0.25em' }}>{roomCode}</p>
+                <p style={{ margin: '4px 0 0', fontSize: '0.7rem', color: T.textLight }}>Chia sẻ mã để mời thành viên</p>
+              </div>
 
-              {/* Room code banner */}
-              <div style={{
-                ...card,
-                background: TOKEN.bgMuted,
-                textAlign: 'center',
-              }}>
-                <p style={{ margin: '0 0 4px', ...sectionLabel, textAlign: 'center' }}>Mã phòng của bạn</p>
-                <p style={{
-                  margin: 0, fontSize: '2rem', fontWeight: 900,
-                  color: TOKEN.text, letterSpacing: '0.25em', lineHeight: 1.2,
-                }}>
-                  {roomCode}
-                </p>
-                <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: TOKEN.textLight }}>
-                  Chia sẻ mã này để mời thành viên vào phòng
+              {/* Info banner */}
+              <div style={{ background: T.cyanLight, border: `1px solid #a5f3fc`, borderRadius: '10px', padding: '10px 14px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>💡</span>
+                <p style={{ margin: 0, fontSize: '0.73rem', color: '#0e7490', lineHeight: 1.6 }}>
+                  Khi bất kỳ ai trong phòng roll hộp mù, kết quả sẽ tự động hiển thị cho tất cả thành viên.
+                  {entryMode === 'host' && ' Khi có xung đột, bạn (trưởng phòng) sẽ chọn kết quả cuối.'}
                 </p>
               </div>
 
-              {/* Member list */}
+              {/* Members */}
               <div>
-                <p style={sectionLabel}>
-                  Thành viên &nbsp;·&nbsp;
-                  <span style={{ color: TOKEN.text }}>{onlineCount}</span> / 4 online
-                </p>
+                <p style={sectionLabel}>Thành viên · <span style={{ color: T.text }}>{onlineCount}</span> / 4</p>
                 <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {members.length === 0 ? (
-                    <li style={{
-                      textAlign: 'center', padding: '18px',
-                      fontSize: '0.78rem', color: TOKEN.textLight,
-                      background: TOKEN.bgSubtle, borderRadius: '12px',
-                      border: `1px dashed ${TOKEN.border}`,
-                    }}>
+                    <li style={{ textAlign: 'center', padding: '16px', fontSize: '0.76rem', color: T.textLight, background: T.bgSubtle, borderRadius: '10px', border: `1px dashed ${T.border}` }}>
                       Đang chờ thành viên tham gia...
                     </li>
-                  ) : (
-                    members.map((member, idx) => (
-                      <MemberRow
-                        key={member.user_id}
-                        member={member}
-                        index={idx}
-                        userId={userId}
-                        openedUsers={openedUsers}
-                        syncedUsers={syncedUsers}
-                      />
-                    ))
-                  )}
+                  ) : members.map((m, i) => (
+                    <MemberRow key={m.user_id} member={m} index={i} userId={userId} memberResults={memberResults} />
+                  ))}
                 </ul>
               </div>
 
-              {/* Location sync hint */}
-              {hasLocation && (
-                <div style={{
-                  ...card,
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                }}>
-                  <span style={{ fontSize: '1rem' }}>📍</span>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: TOKEN.textMuted, lineHeight: 1.5 }}>
-                    Vị trí của các thành viên đang được chia sẻ theo thời gian thực.
-                  </p>
-                </div>
-              )}
+              {/* Hint: roll from main panel */}
+              <div style={{ background: T.bgSubtle, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '10px 14px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.85rem' }}>👆</span>
+                <p style={{ margin: 0, fontSize: '0.72rem', color: T.textMuted, lineHeight: 1.5 }}>
+                  Nhấn <strong style={{ color: T.text }}>BẮT ĐẦU</strong> ở trên để roll hộp mù và chia sẻ với nhóm.
+                </p>
+              </div>
 
-              {/* Open blind box button */}
-              <button
-                onClick={() => handleOpenBlindBox()}
-                disabled={Boolean(openedUsers[userId])}
-                style={btnPrimary(Boolean(openedUsers[userId]))}
-                onMouseEnter={e => {
-                  if (!openedUsers[userId]) e.currentTarget.style.background = TOKEN.accentHov;
-                }}
-                onMouseLeave={e => {
-                  if (!openedUsers[userId]) e.currentTarget.style.background = TOKEN.accent;
-                }}
-              >
-                {openedUsers[userId] ? '🎁 Bạn đã mở hộp' : '🎁 Mở hộp ngay'}
-              </button>
-
-              {/* Leave room */}
-              <button
-                onClick={leaveRoom}
-                style={{
-                  background: 'none', border: 'none',
-                  fontSize: '0.78rem', fontWeight: 600,
-                  color: TOKEN.textMuted, cursor: 'pointer',
-                  padding: '4px', textAlign: 'center',
-                  transition: 'color 0.2s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.color = TOKEN.red}
-                onMouseLeave={e => e.currentTarget.style.color = TOKEN.textMuted}
+              {/* Leave */}
+              <button onClick={leaveRoom}
+                style={{ background: 'none', border: 'none', fontSize: '0.76rem', fontWeight: 600, color: T.textMuted, cursor: 'pointer', padding: '2px', textAlign: 'center', transition: 'color 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.color = T.red}
+                onMouseLeave={e => e.currentTarget.style.color = T.textMuted}
               >
                 ← Thoát phòng
               </button>

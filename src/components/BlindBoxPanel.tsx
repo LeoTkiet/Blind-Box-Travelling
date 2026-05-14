@@ -421,7 +421,7 @@ export default function BlindBoxPanel({
           {showGroupRoom ? "Đóng tạo phòng" : "Tạo phòng nhóm"}
         </button>
 
-        {showGroupRoom && <div style={{ marginTop: "1rem" }}><GroupRoom embedded onSyncBlindBox={onSyncResult} /></div>}
+        {showGroupRoom && <div style={{ marginTop: "1rem" }}><GroupRoom embedded currentResult={result} onSyncBlindBox={onSyncResult} /></div>}
         
       </div>
     </aside>
