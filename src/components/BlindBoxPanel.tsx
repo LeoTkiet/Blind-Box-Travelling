@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -424,4 +425,4 @@ export default function BlindBoxPanel({
       </div>
     </aside>
   );
-}
+};
