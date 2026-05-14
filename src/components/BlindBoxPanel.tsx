@@ -45,6 +45,7 @@ interface Props {
   isGenerating: boolean;
   error: string | null;
   relaxLevel?: number;
+  onSyncResult?: (payload: LocationResult) => void;
 }
 
 const sectionLabel: React.CSSProperties = {
@@ -68,7 +69,7 @@ export default function BlindBoxPanel({
   userLocation, setUserLocation,
   radius, setRadius, category, setCategory,
   onGenerate, result, isGenerating, error,
-  relaxLevel,
+  relaxLevel, onSyncResult,
 }: Props) {
   const [mode, setMode] = useState<"gps" | "address">("gps");
   const [addressInput, setAddressInput] = useState("");
@@ -420,7 +421,7 @@ export default function BlindBoxPanel({
           {showGroupRoom ? "Đóng tạo phòng" : "Tạo phòng nhóm"}
         </button>
 
-        {showGroupRoom && <div style={{ marginTop: "1rem" }}><GroupRoom embedded /></div>}
+        {showGroupRoom && <div style={{ marginTop: "1rem" }}><GroupRoom embedded onSyncBlindBox={onSyncResult} /></div>}
         
       </div>
     </aside>

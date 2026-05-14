@@ -1,158 +1,365 @@
-'use client'; 
+'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 
 const supabase = createClient();
 
-export default function GroupRoom({ embedded = false }) {
-  const [userId, setUserId] = useState(null); 
-  const [roomCode, setRoomCode] = useState(''); 
-  const [inputCode, setInputCode] = useState(''); 
-  const [members, setMembers] = useState([]); 
-  const [onlineCount, setOnlineCount] = useState(0); 
-  const [openedUsers, setOpenedUsers] = useState({}); 
-  const [entryMode, setEntryMode] = useState(null);
+// ─── Design tokens (matches BlindBoxPanel / app theme) ────────────────────────
+const TOKEN = {
+  bg:         '#ffffff',
+  bgSubtle:   '#f8fafc',
+  bgMuted:    '#f1f5f9',
+  border:     '#e2e8f0',
+  borderDark: '#cbd5e1',
+  text:       '#0f172a',
+  textMuted:  '#64748b',
+  textLight:  '#94a3b8',
+  accent:     '#0f172a',
+  accentHov:  '#1e293b',
+  cyan:       '#06b6d4',
+  cyanLight:  '#e0f7fa',
+  green:      '#16a34a',
+  greenLight: '#dcfce7',
+  amber:      '#d97706',
+  amberLight: '#fef3c7',
+  red:        '#dc2626',
+};
+
+const chip = (extra = {}) => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '4px',
+  padding: '3px 10px',
+  borderRadius: '20px',
+  fontSize: '0.7rem',
+  fontWeight: 700,
+  letterSpacing: '0.04em',
+  ...extra,
+});
+
+const sectionLabel = {
+  margin: '0 0 0.6rem',
+  fontSize: '0.62rem',
+  fontWeight: 800,
+  color: TOKEN.textMuted,
+  textTransform: 'uppercase',
+  letterSpacing: '0.15em',
+};
+
+const card = {
+  background: TOKEN.bgSubtle,
+  border: `1px solid ${TOKEN.border}`,
+  borderRadius: '14px',
+  padding: '14px 16px',
+};
+
+const btnPrimary = (disabled = false) => ({
+  width: '100%',
+  padding: '0.9rem',
+  borderRadius: '14px',
+  border: 'none',
+  background: disabled ? TOKEN.bgMuted : TOKEN.accent,
+  color: disabled ? TOKEN.textLight : '#ffffff',
+  fontSize: '0.85rem',
+  fontWeight: 800,
+  letterSpacing: '0.05em',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  transition: 'all 0.2s ease',
+});
+
+const btnOutline = {
+  width: '100%',
+  padding: '0.85rem',
+  borderRadius: '14px',
+  border: `1px solid ${TOKEN.border}`,
+  background: TOKEN.bg,
+  color: TOKEN.text,
+  fontSize: '0.82rem',
+  fontWeight: 700,
+  cursor: 'pointer',
+  transition: 'all 0.2s ease',
+};
+
+// ─── Notification Toast ────────────────────────────────────────────────────────
+function SyncNotification({ notification, onAccept, onDismiss }) {
+  if (!notification) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: '24px',
+      right: '24px',
+      zIndex: 9999,
+      maxWidth: '340px',
+      width: 'calc(100vw - 48px)',
+      background: TOKEN.bg,
+      border: `1px solid ${TOKEN.borderDark}`,
+      borderRadius: '16px',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.14)',
+      padding: '18px 20px',
+      animation: 'slideInNotif 0.35s cubic-bezier(0.2,0.8,0.2,1)',
+    }}>
+      <style>{`
+        @keyframes slideInNotif {
+          from { opacity: 0; transform: translateY(20px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0)   scale(1);    }
+        }
+      `}</style>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '14px' }}>
+        <div style={{
+          width: '36px', height: '36px', borderRadius: '10px',
+          background: TOKEN.cyanLight, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, fontSize: '1.1rem',
+        }}>🎁</div>
+        <div>
+          <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700, color: TOKEN.text, lineHeight: 1.4 }}>
+            Đồng bộ hộp mù
+          </p>
+          <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: TOKEN.textMuted, lineHeight: 1.5 }}>
+            Bạn có muốn đồng bộ hộp mù của người dùng{' '}
+            <span style={{ fontWeight: 700, color: TOKEN.text }}>
+              {notification.shortId}
+            </span>{' '}
+            không?
+          </p>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={onAccept}
+          style={{
+            flex: 1, padding: '0.6rem', borderRadius: '10px', border: 'none',
+            background: TOKEN.accent, color: '#fff', fontSize: '0.8rem', fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = TOKEN.accentHov}
+          onMouseLeave={e => e.currentTarget.style.background = TOKEN.accent}
+        >
+          ✓ Đồng bộ
+        </button>
+        <button
+          onClick={onDismiss}
+          style={{
+            flex: 1, padding: '0.6rem', borderRadius: '10px',
+            border: `1px solid ${TOKEN.border}`, background: TOKEN.bg,
+            color: TOKEN.textMuted, fontSize: '0.8rem', fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = TOKEN.bgMuted; }}
+          onMouseLeave={e => { e.currentTarget.style.background = TOKEN.bg; }}
+        >
+          Bỏ qua
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Member list item ──────────────────────────────────────────────────────────
+function MemberRow({ member, index, userId, openedUsers, syncedUsers }) {
+  const isMe = member.user_id === userId;
+  const hasOpened = Boolean(openedUsers[member.user_id]);
+  const hasSynced = Boolean(syncedUsers[member.user_id]);
+  const shortId = member.user_id?.slice(-6)?.toUpperCase() ?? `#${index + 1}`;
+
+  return (
+    <li style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '10px 12px', borderRadius: '12px',
+      background: isMe ? '#f0fdf4' : TOKEN.bgSubtle,
+      border: `1px solid ${isMe ? '#bbf7d0' : TOKEN.border}`,
+      gap: '10px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Avatar */}
+        <div style={{
+          width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
+          background: isMe ? TOKEN.accent : TOKEN.bgMuted,
+          border: `2px solid ${isMe ? TOKEN.accent : TOKEN.borderDark}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '0.75rem', fontWeight: 800,
+          color: isMe ? '#fff' : TOKEN.textMuted,
+        }}>
+          {index + 1}
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 700, color: TOKEN.text }}>
+            {isMe ? 'Bạn' : `Thành viên …${shortId}`}
+            {isMe && <span style={{ ...chip({ background: TOKEN.greenLight, color: TOKEN.green }), marginLeft: '6px' }}>Bạn</span>}
+          </p>
+          {member.joined_at && (
+            <p style={{ margin: 0, fontSize: '0.68rem', color: TOKEN.textLight }}>
+              Tham gia lúc {member.joined_at}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Status chip */}
+      {hasOpened ? (
+        <span style={chip({ background: TOKEN.cyanLight, color: TOKEN.cyan })}>
+          🎁 Đã mở
+          {hasSynced && !isMe && ' · Đã đồng bộ'}
+        </span>
+      ) : (
+        <span style={chip({ background: TOKEN.bgMuted, color: TOKEN.textMuted })}>
+          ⏳ Đang chờ
+        </span>
+      )}
+    </li>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+export default function GroupRoom({ embedded = false, onSyncBlindBox }) {
+  const [userId, setUserId]           = useState(null);
+  const [roomCode, setRoomCode]       = useState('');
+  const [inputCode, setInputCode]     = useState('');
+  const [members, setMembers]         = useState([]);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [openedUsers, setOpenedUsers] = useState({});
+  const [syncedUsers, setSyncedUsers] = useState({});
+  const [entryMode, setEntryMode]     = useState(null);
+
+  // Blind-box payload broadcast
+  const [syncNotification, setSyncNotification] = useState(null); // { userId, shortId, payload }
+
   const channelRef = useRef(null);
 
-  const syncMembersFromPresence = (roomChannel) => {
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const syncMembersFromPresence = useCallback((roomChannel) => {
     const presenceState = roomChannel.presenceState();
-    const onlineUsers = Object.keys(presenceState).length;
-    setOnlineCount(onlineUsers);
+    setOnlineCount(Object.keys(presenceState).length);
 
     const currentMembers = Object.entries(presenceState).map(([presenceKey, metas]) => {
       const latestMeta = metas?.[metas.length - 1] ?? {};
       return {
-        user_id: latestMeta.user_id || presenceKey,
+        user_id:   latestMeta.user_id || presenceKey,
         joined_at: latestMeta.joined_at,
-        status: latestMeta.status || 'Đang chờ...',
+        status:    latestMeta.status || 'Đang chờ...',
+        lat:       latestMeta.lat,
+        lng:       latestMeta.lng,
       };
     });
 
     setMembers(currentMembers);
-  };
-
-  useEffect(() => {
-    if (!supabase) return;
-
-    const loginAnonymously = async () => {
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.error('Lỗi đăng nhập ẩn danh:', error.message);
-      } else if (data?.user) {
-        setUserId(data.user.id); 
-      }
-    };
-    loginAnonymously();
   }, []);
 
+  const leaveRoom = useCallback(() => {
+    setRoomCode('');
+    setMembers([]);
+    setOnlineCount(0);
+    setOpenedUsers({});
+    setSyncedUsers({});
+    setSyncNotification(null);
+    setEntryMode(null);
+  }, []);
+
+  // ── Anonymous login ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!supabase) return;
+    (async () => {
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (!error && data?.user) setUserId(data.user.id);
+    })();
+  }, []);
+
+  // ── Room actions ───────────────────────────────────────────────────────────
   const handleCreateRoom = () => {
     const newCode = Math.random().toString(36).substring(2, 7).toUpperCase();
     setEntryMode('host');
     setRoomCode(newCode);
   };
 
- const handleJoinRoom = async () => {
-    const normalizedCode = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-    if (normalizedCode.length !== 5) {
-      alert("Mã phòng phải có 5 ký tự!");
-      return;
-    }
-
+  const handleJoinRoom = () => {
+    const normalized = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (normalized.length !== 5) { alert('Mã phòng phải có 5 ký tự!'); return; }
     setEntryMode('guest');
-    setRoomCode(normalizedCode);
+    setRoomCode(normalized);
   };
 
-  const handleOpenBlindBox = async () => {
+  const handleOpenBlindBox = async (payload = null) => {
     if (!channelRef.current || !userId) return;
 
     const openedAt = new Date().toISOString();
-
-    setOpenedUsers((prev) => ({ ...prev, [userId]: openedAt }));
+    setOpenedUsers(prev => ({ ...prev, [userId]: openedAt }));
 
     await channelRef.current.track({
-      user_id: userId,
+      user_id:   userId,
       joined_at: new Date().toLocaleTimeString(),
-      status: 'Đã mở hộp',
+      status:    'Đã mở hộp',
     });
 
     await channelRef.current.send({
-      type: 'broadcast',
-      event: 'blind_box_opened',
+      type:    'broadcast',
+      event:   'blind_box_opened',
       payload: {
-        user_id: userId,
-        opened_at: openedAt,
+        user_id:    userId,
+        opened_at:  openedAt,
+        blind_box:  payload, // optional result payload
       },
     });
   };
 
+  // ── Realtime channel ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomCode || !userId || !supabase) return;
 
     const roomChannel = supabase.channel(`room_${roomCode}`, {
-      config: {
-        presence: { key: userId }, 
-      },
+      config: { presence: { key: userId } },
     });
 
     channelRef.current = roomChannel;
 
-    roomChannel.on('presence', { event: 'sync' }, () => {
-      syncMembersFromPresence(roomChannel);
-    });
+    roomChannel.on('presence', { event: 'sync'  }, () => syncMembersFromPresence(roomChannel));
+    roomChannel.on('presence', { event: 'join'  }, () => syncMembersFromPresence(roomChannel));
+    roomChannel.on('presence', { event: 'leave' }, () => syncMembersFromPresence(roomChannel));
 
-    roomChannel.on('presence', { event: 'join' }, () => {
-      syncMembersFromPresence(roomChannel);
-    });
-
-    roomChannel.on('presence', { event: 'leave' }, () => {
-      syncMembersFromPresence(roomChannel);
-    });
-
+    // ── Broadcast: blind box opened ──────────────────────────────────────────
     roomChannel.on('broadcast', { event: 'blind_box_opened' }, ({ payload }) => {
       const openedUserId = payload?.user_id;
-      const openedAt = payload?.opened_at;
+      const openedAt     = payload?.opened_at;
+      const blindBox     = payload?.blind_box;
+      const shortId      = openedUserId?.slice(-6)?.toUpperCase() ?? '??????';
 
-      if (!openedUserId) return;
+      if (!openedUserId || openedUserId === userId) return;
 
-      setOpenedUsers((prev) => ({
-        ...prev,
-        [openedUserId]: openedAt || new Date().toISOString(),
-      }));
+      // Update opened state
+      setOpenedUsers(prev => ({ ...prev, [openedUserId]: openedAt || new Date().toISOString() }));
+      setMembers(prev => prev.map(m =>
+        m.user_id === openedUserId ? { ...m, status: 'Đã mở hộp' } : m
+      ));
 
-      setMembers((prevMembers) =>
-        prevMembers.map((member) =>
-          member.user_id === openedUserId
-            ? { ...member, status: 'Đã mở hộp' }
-            : member
-        )
-      );
+      // Show sync notification
+      setSyncNotification({ userId: openedUserId, shortId, payload: blindBox });
+    });
+
+    // ── Broadcast: location update ───────────────────────────────────────────
+    roomChannel.on('broadcast', { event: 'location_update' }, ({ payload }) => {
+      const { user_id: uid, lat, lng } = payload;
+      setMembers(prev => prev.map(m =>
+        m.user_id === uid ? { ...m, lat, lng } : m
+      ));
     });
 
     roomChannel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         await roomChannel.track({
-          user_id: userId,
+          user_id:   userId,
           joined_at: new Date().toLocaleTimeString(),
-          status: 'Đang chờ...',
+          status:    'Đang chờ...',
         });
 
         syncMembersFromPresence(roomChannel);
 
-        // Nếu vào bằng mã mà trong phòng chỉ có chính mình, xem như phòng không tồn tại.
         if (entryMode === 'guest') {
           setTimeout(() => {
             const presenceState = roomChannel.presenceState();
-            const hasOtherMembers = Object.keys(presenceState).some((key) => key !== userId);
-
-            if (!hasOtherMembers) {
-              alert("❌ Phòng không tồn tại hoặc mọi người đã thoát hết!");
-              setRoomCode('');
-              setMembers([]);
-              setOnlineCount(0);
-              setOpenedUsers({});
-              setEntryMode(null);
+            const hasOthers = Object.keys(presenceState).some(k => k !== userId);
+            if (!hasOthers) {
+              alert('❌ Phòng không tồn tại hoặc mọi người đã thoát hết!');
+              leaveRoom();
               supabase.removeChannel(roomChannel);
             }
           }, 1200);
@@ -164,114 +371,264 @@ export default function GroupRoom({ embedded = false }) {
       channelRef.current = null;
       setOnlineCount(0);
       setOpenedUsers({});
-      supabase.removeChannel(roomChannel); 
+      setSyncedUsers({});
+      setSyncNotification(null);
+      supabase.removeChannel(roomChannel);
     };
-  }, [roomCode, userId, entryMode]); 
+  }, [roomCode, userId, entryMode, syncMembersFromPresence, leaveRoom]);
+
+  // ── Broadcast own location whenever it changes ─────────────────────────────
+  useEffect(() => {
+    if (!channelRef.current || !userId) return;
+    if (!navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      channelRef.current?.track({
+        user_id:   userId,
+        joined_at: new Date().toLocaleTimeString(),
+        status:    openedUsers[userId] ? 'Đã mở hộp' : 'Đang chờ...',
+        lat,
+        lng,
+      });
+      channelRef.current?.send({
+        type:    'broadcast',
+        event:   'location_update',
+        payload: { user_id: userId, lat, lng },
+      });
+    }, null, { enableHighAccuracy: true, maximumAge: 5000 });
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [roomCode, userId, openedUsers]);
+
+  // ── Sync notification handlers ─────────────────────────────────────────────
+  const handleAcceptSync = useCallback(() => {
+    if (!syncNotification) return;
+    setSyncedUsers(prev => ({ ...prev, [syncNotification.userId]: true }));
+    if (syncNotification.payload && onSyncBlindBox) {
+      onSyncBlindBox(syncNotification.payload);
+    }
+    setSyncNotification(null);
+  }, [syncNotification, onSyncBlindBox]);
+
+  const handleDismissSync = useCallback(() => {
+    setSyncNotification(null);
+  }, []);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const hasLocation = members.some(m => m.user_id !== userId && m.lat);
 
   return (
-    <div className={`${embedded ? 'bg-gray-50 py-4 px-0' : 'min-h-screen bg-gray-50 py-10 px-4'} flex flex-col items-center font-sans`}>
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6">
-        <h1 className="text-2xl font-bold text-center text-indigo-600 mb-6">
-          Blind Box Travelling 🎒
-        </h1>
+    <>
+      {/* ── Sync Toast Notification ── */}
+      <SyncNotification
+        notification={syncNotification}
+        onAccept={handleAcceptSync}
+        onDismiss={handleDismissSync}
+      />
 
-        {!supabase && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            Thiếu cấu hình Supabase. Hãy thêm NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_ANON_KEY trong .env.local.
+      <div style={{
+        fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+        background: TOKEN.bg,
+        borderRadius: '16px',
+        border: `1px solid ${TOKEN.border}`,
+        overflow: 'hidden',
+      }}>
+
+        {/* ── Header ── */}
+        <div style={{
+          padding: '14px 18px',
+          borderBottom: `1px solid ${TOKEN.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: TOKEN.bgSubtle,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '1rem' }}>👥</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: TOKEN.text, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Phòng Nhóm
+            </span>
           </div>
-        )}
-
-        {!roomCode ? (
-          <div className="space-y-6">
-            <button 
-              onClick={handleCreateRoom}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl transition duration-200 shadow-md"
-            >
-              ✨ Tạo Phòng Mới
-            </button>
-            
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-gray-300"></div>
-              <span className="flex-shrink-0 mx-4 text-gray-400">hoặc</span>
-              <div className="flex-grow border-t border-gray-300"></div>
+          {roomCode && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{
+                width: '7px', height: '7px', borderRadius: '50%',
+                background: TOKEN.green,
+                boxShadow: `0 0 0 3px ${TOKEN.greenLight}`,
+                display: 'inline-block',
+              }} />
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: TOKEN.textMuted }}>
+                {onlineCount} online
+              </span>
             </div>
+          )}
+        </div>
 
-            <div className="flex gap-2">
-              {/* ĐÃ UPDATE UI: Thẻ input chữ đen, rõ nét, canh giữa */}
-              <input 
-                type="text" 
-                placeholder="Nhập mã phòng (5 ký tự)" 
-                className="flex-1 border-2 border-gray-300 rounded-xl px-4 py-3 uppercase focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-100 text-gray-900 font-bold tracking-widest placeholder-gray-400 text-center"
-                value={inputCode}
-                onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                maxLength={5}
-              />
-              <button 
-                onClick={handleJoinRoom}
-                className="bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-6 rounded-xl transition duration-200"
+        {/* ── Body ── */}
+        <div style={{ padding: '18px' }}>
+          {!supabase && (
+            <div style={{
+              marginBottom: '14px', borderRadius: '10px',
+              border: `1px solid #fecaca`, background: '#fef2f2',
+              padding: '10px 14px', fontSize: '0.78rem', color: TOKEN.red,
+            }}>
+              Thiếu cấu hình Supabase. Hãy thêm NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_ANON_KEY trong .env.local.
+            </div>
+          )}
+
+          {!roomCode ? (
+            /* ── Entry screen ── */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button
+                onClick={handleCreateRoom}
+                style={btnPrimary()}
+                onMouseEnter={e => e.currentTarget.style.background = TOKEN.accentHov}
+                onMouseLeave={e => e.currentTarget.style.background = TOKEN.accent}
               >
-                Vào
+                ✨ Tạo phòng mới
+              </button>
+
+              {/* Divider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0' }}>
+                <div style={{ flex: 1, height: '1px', background: TOKEN.border }} />
+                <span style={{ fontSize: '0.72rem', color: TOKEN.textLight, fontWeight: 600 }}>hoặc</span>
+                <div style={{ flex: 1, height: '1px', background: TOKEN.border }} />
+              </div>
+
+              {/* Join room */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="Mã phòng (5 ký tự)"
+                  value={inputCode}
+                  onChange={e => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                  maxLength={5}
+                  style={{
+                    flex: 1, padding: '0.8rem 1rem', borderRadius: '12px',
+                    border: `1.5px solid ${TOKEN.border}`, background: TOKEN.bgSubtle,
+                    fontSize: '0.85rem', fontWeight: 800, letterSpacing: '0.2em',
+                    color: TOKEN.text, outline: 'none', textAlign: 'center',
+                    textTransform: 'uppercase', transition: 'all 0.2s',
+                  }}
+                  onFocus={e => { e.currentTarget.style.borderColor = TOKEN.accent; e.currentTarget.style.background = TOKEN.bg; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = TOKEN.border; e.currentTarget.style.background = TOKEN.bgSubtle; }}
+                />
+                <button
+                  onClick={handleJoinRoom}
+                  style={{
+                    padding: '0.8rem 1.1rem', borderRadius: '12px',
+                    background: TOKEN.accent, color: '#fff', border: 'none',
+                    fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = TOKEN.accentHov}
+                  onMouseLeave={e => e.currentTarget.style.background = TOKEN.accent}
+                >
+                  Vào
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* ── Room screen ── */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+
+              {/* Room code banner */}
+              <div style={{
+                ...card,
+                background: TOKEN.bgMuted,
+                textAlign: 'center',
+              }}>
+                <p style={{ margin: '0 0 4px', ...sectionLabel, textAlign: 'center' }}>Mã phòng của bạn</p>
+                <p style={{
+                  margin: 0, fontSize: '2rem', fontWeight: 900,
+                  color: TOKEN.text, letterSpacing: '0.25em', lineHeight: 1.2,
+                }}>
+                  {roomCode}
+                </p>
+                <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: TOKEN.textLight }}>
+                  Chia sẻ mã này để mời thành viên vào phòng
+                </p>
+              </div>
+
+              {/* Member list */}
+              <div>
+                <p style={sectionLabel}>
+                  Thành viên &nbsp;·&nbsp;
+                  <span style={{ color: TOKEN.text }}>{onlineCount}</span> / 4 online
+                </p>
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {members.length === 0 ? (
+                    <li style={{
+                      textAlign: 'center', padding: '18px',
+                      fontSize: '0.78rem', color: TOKEN.textLight,
+                      background: TOKEN.bgSubtle, borderRadius: '12px',
+                      border: `1px dashed ${TOKEN.border}`,
+                    }}>
+                      Đang chờ thành viên tham gia...
+                    </li>
+                  ) : (
+                    members.map((member, idx) => (
+                      <MemberRow
+                        key={member.user_id}
+                        member={member}
+                        index={idx}
+                        userId={userId}
+                        openedUsers={openedUsers}
+                        syncedUsers={syncedUsers}
+                      />
+                    ))
+                  )}
+                </ul>
+              </div>
+
+              {/* Location sync hint */}
+              {hasLocation && (
+                <div style={{
+                  ...card,
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                }}>
+                  <span style={{ fontSize: '1rem' }}>📍</span>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: TOKEN.textMuted, lineHeight: 1.5 }}>
+                    Vị trí của các thành viên đang được chia sẻ theo thời gian thực.
+                  </p>
+                </div>
+              )}
+
+              {/* Open blind box button */}
+              <button
+                onClick={() => handleOpenBlindBox()}
+                disabled={Boolean(openedUsers[userId])}
+                style={btnPrimary(Boolean(openedUsers[userId]))}
+                onMouseEnter={e => {
+                  if (!openedUsers[userId]) e.currentTarget.style.background = TOKEN.accentHov;
+                }}
+                onMouseLeave={e => {
+                  if (!openedUsers[userId]) e.currentTarget.style.background = TOKEN.accent;
+                }}
+              >
+                {openedUsers[userId] ? '🎁 Bạn đã mở hộp' : '🎁 Mở hộp ngay'}
+              </button>
+
+              {/* Leave room */}
+              <button
+                onClick={leaveRoom}
+                style={{
+                  background: 'none', border: 'none',
+                  fontSize: '0.78rem', fontWeight: 600,
+                  color: TOKEN.textMuted, cursor: 'pointer',
+                  padding: '4px', textAlign: 'center',
+                  transition: 'color 0.2s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = TOKEN.red}
+                onMouseLeave={e => e.currentTarget.style.color = TOKEN.textMuted}
+              >
+                ← Thoát phòng
               </button>
             </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="bg-indigo-50 border-2 border-indigo-100 rounded-xl p-4 text-center">
-              <p className="text-sm text-indigo-400 font-semibold mb-1">MÃ PHÒNG CỦA BẠN</p>
-              <p className="text-4xl font-black text-indigo-700 tracking-widest">{roomCode}</p>
-            </div>
-
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="font-bold text-gray-700">Thành viên ({onlineCount}/4)</h3>
-                <span className="flex h-3 w-3 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                </span>
-              </div>
-              
-              <ul className="space-y-2">
-                {members.map((member, idx) => (
-                  <li key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
-                        {idx + 1}
-                      </div>
-                      <span className="text-sm font-medium text-gray-700">
-                        {member.user_id === userId ? 'Bạn (Host)' : member.user_id}
-                      </span>
-                    </div>
-                    <span className="text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                      {openedUsers[member.user_id] ? 'Đã mở hộp' : member.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <button
-              onClick={handleOpenBlindBox}
-              disabled={Boolean(openedUsers[userId])}
-              className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition duration-200 shadow-md"
-            >
-              {openedUsers[userId] ? '🎁 Bạn đã mở hộp' : '🎁 Mở hộp ngay'}
-            </button>
-
-            <button 
-              onClick={() => {
-                setRoomCode('');
-                setMembers([]);
-                setOnlineCount(0);
-                setOpenedUsers({});
-                setEntryMode(null);
-              }}
-              className="w-full mt-4 text-gray-500 hover:text-red-500 text-sm font-semibold transition"
-            >
-              ← Thoát phòng
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
