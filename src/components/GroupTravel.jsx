@@ -5,8 +5,6 @@ import { createClient } from '@/utils/supabase/client';
 
 const supabase = createClient();
 
-const CONFLICT_WINDOW_MS = 5000;
-
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
   bg: '#ffffff', bgSubtle: '#f8fafc', bgMuted: '#f1f5f9',
@@ -28,54 +26,6 @@ const sectionLabel = {
   margin: '0 0 0.5rem', fontSize: '0.62rem', fontWeight: 800,
   color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.15em',
 };
-
-// ─── Conflict Modal ─────────────────────────────────────────────────────────────
-function ConflictModal({ conflict, onPick }) {
-  if (!conflict) return null;
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 10000,
-      background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
-    }}>
-      <div style={{
-        background: T.bg, borderRadius: '20px', border: `1px solid ${T.border}`,
-        boxShadow: '0 25px 80px rgba(0,0,0,0.18)', padding: '24px', maxWidth: '380px', width: '100%',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-          <span style={{ fontSize: '1.2rem' }}>⚡</span>
-          <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: T.text }}>Xung đột hộp mù</p>
-        </div>
-        <p style={{ margin: '0 0 18px', fontSize: '0.78rem', color: T.textMuted, lineHeight: 1.6 }}>
-          Nhiều người cùng roll hộp mù. Là trưởng phòng, hãy chọn kết quả cho cả nhóm:
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {conflict.options.map((opt, i) => (
-            <button key={i} onClick={() => onPick(opt.result)}
-              style={{
-                padding: '12px 16px', borderRadius: '12px', cursor: 'pointer',
-                border: `1.5px solid ${T.border}`, background: T.bgSubtle,
-                textAlign: 'left', transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.bg; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bgSubtle; }}
-            >
-              <p style={{ margin: '0 0 2px', fontSize: '0.82rem', fontWeight: 700, color: T.text }}>
-                🎁 Hộp mù #{i + 1}
-              </p>
-              <p style={{ margin: 0, fontSize: '0.72rem', color: T.textMuted }}>
-                {opt.result?.category ?? 'Không rõ loại'}{opt.result?.address ? ' · ' + opt.result.address : ''}
-              </p>
-              <p style={{ margin: '4px 0 0', fontSize: '0.68rem', color: T.textLight }}>
-                {opt.isMe ? 'Kết quả của bạn' : `Của thành viên …${opt.shortId}`}
-              </p>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Member Row ─────────────────────────────────────────────────────────────────
 function MemberRow({ member, index, userId, memberResults }) {
@@ -131,7 +81,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
   const [onlineCount, setOnlineCount] = useState(0);
   const [entryMode, setEntryMode]     = useState(null);
   const [memberResults, setMemberResults] = useState({});
-  const [conflict, setConflict]       = useState(null);
 
   // ── Chat state ──────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab]     = useState('members'); // 'members' | 'chat'
@@ -156,7 +105,7 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
 
   const leaveRoom = useCallback(() => {
     setRoomCode(''); setMembers([]); setOnlineCount(0);
-    setMemberResults({}); setConflict(null); setEntryMode(null);
+    setMemberResults({}); setEntryMode(null);
     setMessages([]); setChatInput(''); setUnreadCount(0); setActiveTab('members');
     myRollTimeRef.current = null; prevResultRef.current = null;
   }, []);
@@ -212,38 +161,13 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
 
     // ── Someone rolled a blind box ──
     ch.on('broadcast', { event: 'blind_box_result' }, ({ payload }) => {
-      const { user_id: sender, result, ts } = payload;
+      const { user_id: sender, result } = payload;
       if (!sender || sender === userId) return;
 
       // Track their result in member list
       setMemberResults(prev => ({ ...prev, [sender]: result }));
 
-      const myTs = myRollTimeRef.current;
-      const isConflict = myTs && Math.abs(ts - myTs) < CONFLICT_WINDOW_MS;
-
-      if (isConflict) {
-        // Only the host resolves — non-host waits for conflict_resolved
-        if (entryMode === 'host') {
-          const myResult = prevResultRef.current;
-          const shortId  = sender.slice(-6).toUpperCase();
-          setConflict({
-            options: [
-              { result: myResult, isMe: true,  shortId: 'Bạn' },
-              { result,           isMe: false, shortId },
-            ],
-          });
-        }
-      } else {
-        // No conflict — auto-apply to everyone
-        onSyncBlindBox?.(result);
-      }
-    });
-
-    // ── Host broadcast resolved winner ──
-    ch.on('broadcast', { event: 'conflict_resolved' }, ({ payload }) => {
-      const { result } = payload;
-      setConflict(null);
-      myRollTimeRef.current = null;
+      // Auto-apply to everyone
       onSyncBlindBox?.(result);
     });
 
@@ -282,18 +206,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
       supabase.removeChannel(ch);
     };
   }, [roomCode, userId, entryMode, syncMembers, leaveRoom, onSyncBlindBox]);
-
-  // ── Host picks winner ──────────────────────────────────────────────────────
-  const handlePickWinner = useCallback(async (result) => {
-    setConflict(null);
-    myRollTimeRef.current = null;
-    onSyncBlindBox?.(result);
-    await channelRef.current?.send({
-      type: 'broadcast',
-      event: 'conflict_resolved',
-      payload: { result },
-    });
-  }, [onSyncBlindBox]);
 
   // ── Chat: auto-scroll ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -334,8 +246,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
-      <ConflictModal conflict={conflict} onPick={handlePickWinner} />
-
       <div style={{
         fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
         background: T.bg, borderRadius: '16px',
@@ -454,8 +364,7 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
                   <div style={{ background: T.cyanLight, border: `1px solid #a5f3fc`, borderRadius: '10px', padding: '10px 14px', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                     <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>💡</span>
                     <p style={{ margin: 0, fontSize: '0.73rem', color: '#0e7490', lineHeight: 1.6 }}>
-                      Khi bất kỳ ai trong phòng roll hộp mù, kết quả sẽ tự động hiển thị cho tất cả.
-                      {entryMode === 'host' && ' Khi có xung đột, bạn (trưởng phòng) sẽ chọn.'}
+                      Khi bất kỳ ai trong phòng roll hộp mù, kết quả sẽ tự động hiển thị cho tất cả thành viên. Ai roll sau cùng sẽ là kết quả mới nhất cho cả nhóm.
                     </p>
                   </div>
                   <div>
