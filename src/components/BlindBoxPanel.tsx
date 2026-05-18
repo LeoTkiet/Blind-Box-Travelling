@@ -36,7 +36,6 @@ const CATEGORIES = [
 interface Suggestion { id: string; place_name: string; center: [number, number]; }
 
 interface Props {
-  userLocation: UserLocation | null;
   setUserLocation: (loc: UserLocation | null) => void;
   radius: number; setRadius: (r: number) => void;
   category: string; setCategory: (c: string) => void;
@@ -46,6 +45,8 @@ interface Props {
   error: string | null;
   relaxLevel?: number;
   onSyncResult?: (payload: LocationResult) => void;
+  userLocation?: any;
+  onMembersUpdate?: (members: any[]) => void;
 }
 
 const sectionLabel: React.CSSProperties = {
@@ -69,7 +70,7 @@ export default function BlindBoxPanel({
   userLocation, setUserLocation,
   radius, setRadius, category, setCategory,
   onGenerate, result, isGenerating, error,
-  relaxLevel, onSyncResult,
+  relaxLevel, onSyncResult, onMembersUpdate
 }: Props) {
   const [mode, setMode] = useState<"gps" | "address">("gps");
   const [addressInput, setAddressInput] = useState("");
@@ -421,7 +422,7 @@ export default function BlindBoxPanel({
           {showGroupRoom ? "Đóng tạo phòng" : "Tạo phòng nhóm"}
         </button>
 
-        {showGroupRoom && <div style={{ marginTop: "1rem" }}><GroupRoom embedded currentResult={result} onSyncBlindBox={onSyncResult} /></div>}
+        {showGroupRoom && <div style={{ marginTop: "1rem" }}><GroupRoom embedded currentResult={result} onSyncBlindBox={onSyncResult} userLocation={userLocation} onMembersUpdate={onMembersUpdate} /></div>}
         
       </div>
     </aside>

@@ -33,6 +33,7 @@ export default function AppContent() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [relaxLevel, setRelaxLevel] = useState<number>(0);
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
 
   // ── Sync handler: called when user accepts a group member's blind box ──
   const handleSyncResult = useCallback((payload: LocationResult) => {
@@ -134,10 +135,11 @@ export default function AppContent() {
         result={result} isGenerating={isGenerating} error={error}
         relaxLevel={relaxLevel}
         onSyncResult={handleSyncResult}
+        onMembersUpdate={setGroupMembers}
       />
       {/* MapView container */}
       <div className="absolute inset-0 md:relative md:flex-1 md:order-2 z-0">
-        <MapView userLocation={userLocation} radius={radius} result={result} />
+        <MapView userLocation={userLocation} radius={radius} result={result} groupMembers={groupMembers} />
       </div>
 
       {/* onLocationUpdate syncs ChatBox's geolocation button back to AppContent state,
