@@ -6,7 +6,7 @@ import { Users, Sparkles, LogOut, MessageSquare, Send } from 'lucide-react';
 
 const supabase = createClient();
 
-export default function GroupRoom({ embedded = false, currentResult, onSyncBlindBox }) {
+export default function GroupRoom({ embedded = false, currentResult, onSyncBlindBox, userLocation, onMembersUpdate }) {
   const [userId, setUserId] = useState(null); 
   const [roomCode, setRoomCode] = useState(''); 
   const [inputCode, setInputCode] = useState(''); 
@@ -19,7 +19,8 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
   ]);
 
   const channelRef = useRef(null);
-  const lastResultRef = useRef(null); // Tấm khiên chống dội kết quả (Tránh 2 máy cứ đẩy qua đẩy lại vô tận)
+  const lastResultRef = useRef(null); 
+  const joinTimeRef = useRef(null); 
 
   useEffect(() => {
     if (!supabase) return;
@@ -41,61 +42,60 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
     else alert("Mã phòng phải có 5 ký tự!");
   };
 
-  // --- KẾT NỐI REALTIME & BROADCAST TỔNG HỢP ---
+  // --- KẾT NỐI REALTIME ---
   useEffect(() => {
     if (!roomCode || !userId || !supabase) return;
 
-    // Khởi tạo kênh với config Broadcast bật sẵn
     const roomChannel = supabase.channel(`room_${roomCode}`, {
       config: {
         presence: { key: userId }, 
-        broadcast: { self: false } // Không tự nhận lại tin nhắn của chính mình
+        broadcast: { self: false } 
       },
     });
 
     channelRef.current = roomChannel;
 
-    // 1. ĐỒNG BỘ DANH SÁCH THÀNH VIÊN VÀ CHỌN HOST
     roomChannel.on('presence', { event: 'sync' }, () => {
       const state = roomChannel.presenceState();
       const currentMembers = Object.keys(state).map((key) => state[key][0]);
       
-      // FIX LỖI HOST: Sắp xếp danh sách theo thời gian join. Ai vào sớm nhất là Host!
       currentMembers.sort((a, b) => a.joined_at - b.joined_at);
       setMembers(currentMembers);
+
+      // GỬI DANH SÁCH BẠN BÈ RA BẢN ĐỒ (Lọc bỏ chính mình)
+      if (onMembersUpdate) {
+        const otherMembers = currentMembers.filter(m => m.user_id !== userId);
+        onMembersUpdate(otherMembers);
+      }
     });
 
-    // 2. LẮNG NGHE TIN NHẮN CHAT TỪ NGƯỜI KHÁC
     roomChannel.on('broadcast', { event: 'chat_message' }, (payload) => {
       setMessages(prev => [...prev, payload.payload]);
     });
 
-    // 3. FIX LỖI ROLL: LẮNG NGHE KẾT QUẢ ĐỊA ĐIỂM TỪ NGƯỜI KHÁC BẮN SANG
     roomChannel.on('broadcast', { event: 'sync_result' }, (payload) => {
       if (onSyncBlindBox && payload.payload) {
-        // Cập nhật khiên chắn để máy mình không phát lại kết quả này nữa
         lastResultRef.current = payload.payload.name; 
-        
-        // Gọi hàm để update lên bản đồ
         onSyncBlindBox(payload.payload);
         
-        // Bắn luôn một tin nhắn hệ thống vào Chat Box cho mọi người cùng thấy
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           sender: 'Hệ thống',
-          text: `🎁 Ai đó vừa quay trúng địa điểm mới!`,
+          text: `Khởi hành thôi! Một hộp mù mới vừa được đồng bộ. Điểm đến sẽ tự động lộ diện khi nhóm bạn cách đó 200m nhé!`,
           isSystem: true
         }]);
       }
     });
 
-    // Đăng ký vào phòng
     roomChannel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        joinTimeRef.current = Date.now(); // Khóa thời gian vào phòng
         await roomChannel.track({
           user_id: userId,
-          joined_at: Date.now(), // Lưu timestamp chính xác bằng số để tính Host
+          joined_at: joinTimeRef.current,
           status: 'Online',
+          lat: userLocation?.lat || null, 
+          lng: userLocation?.lng || null
         });
       }
     });
@@ -103,12 +103,23 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
     return () => {
       supabase.removeChannel(roomChannel); 
     };
-  }, [roomCode, userId, onSyncBlindBox]); 
+  }, [roomCode, userId, onSyncBlindBox, onMembersUpdate]); 
 
-  // --- MỖI KHI MÌNH ROLL RA ĐỊA ĐIỂM, LẤY LOA PHÁT CHO CẢ PHÒNG ---
+  // --- CẬP NHẬT TỌA ĐỘ GPS CỦA MÌNH LÊN PHÒNG LIÊN TỤC ---
+  useEffect(() => {
+    if (channelRef.current && userLocation && userId && joinTimeRef.current) {
+      channelRef.current.track({
+        user_id: userId,
+        joined_at: joinTimeRef.current, // Dùng lại thời gian cũ để giữ chức Host
+        status: 'Online',
+        lat: userLocation.lat, // Bắn vĩ độ
+        lng: userLocation.lng  // Bắn kinh độ
+      });
+    }
+  }, [userLocation, userId]);
+
   useEffect(() => {
     if (roomCode && currentResult && channelRef.current) {
-      // Chỉ phát sóng nếu đây là kết quả mới hoàn toàn
       if (lastResultRef.current !== currentResult.name) {
         lastResultRef.current = currentResult.name;
         channelRef.current.send({
@@ -120,7 +131,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
     }
   }, [currentResult, roomCode]);
 
-  // --- XỬ LÝ NÚT GỬI TIN NHẮN CHAT ---
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -132,7 +142,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
       isSystem: false
     };
 
-    // Dùng bộ đàm phát tin nhắn này cho cả phòng
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
@@ -141,12 +150,10 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
       });
     }
 
-    // In tin nhắn lên màn hình của chính mình
     setMessages(prev => [...prev, newMsg]);
     setChatInput('');
   };
 
-  // Lấy ID của người làm Host (Người đứng đầu danh sách sau khi đã sort)
   const hostId = members.length > 0 ? members[0].user_id : null;
 
   return (
@@ -241,7 +248,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
                       const isMe = member.user_id === userId;
                       const isHost = member.user_id === hostId;
                       
-                      // Cách hiển thị Tên và Chức vụ chuẩn xác
                       let displayName = isMe ? 'Bạn' : `Thành viên ${member.user_id.substring(0,4)}`;
                       if (isHost) displayName += ' (Host)';
 
