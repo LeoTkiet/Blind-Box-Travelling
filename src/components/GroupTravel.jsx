@@ -7,7 +7,7 @@ import { Users, Sparkles, LogOut } from 'lucide-react';
 //1. KHỞI TẠO SUPABASE CLIENT
 const supabase = createClient();
 
-export default function GroupRoom({ embedded = false }) {
+export default function GroupRoom({ embedded = false, currentResult, onSyncBlindBox }) {
   // --- STATE MANAGEMENT  ---
   const [userId, setUserId] = useState(null); // Lưu ID ẩn danh
   const [roomCode, setRoomCode] = useState(''); // Mã phòng hiện tại
