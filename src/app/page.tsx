@@ -39,7 +39,6 @@ export default function Home() {
             
             <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none"></div>
             
-            {/* --- THÊM HÌNH ẢNH HỘP QUÀ VÀO ĐÂY --- */}
             <div className="relative w-full flex justify-center mb-8">
               <img 
                 src="/mystery-box.png" 

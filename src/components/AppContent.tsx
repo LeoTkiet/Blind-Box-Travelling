@@ -34,6 +34,13 @@ export default function AppContent() {
   const [error, setError] = useState<string | null>(null);
   const [relaxLevel, setRelaxLevel] = useState<number>(0);
 
+  // ── Sync handler: called when user accepts a group member's blind box ──
+  const handleSyncResult = useCallback((payload: LocationResult) => {
+    if (!payload) return;
+    setResult(payload);
+    setRelaxLevel(0);
+  }, []);
+
   // ── Dual-Routing Handler ──
   // query: text from Magic Bar, selectedTags: badges selected
   const handleGenerate = useCallback(async (query: string, selectedTags: string[]) => {
@@ -126,6 +133,7 @@ export default function AppContent() {
         onGenerate={handleGenerate}
         result={result} isGenerating={isGenerating} error={error}
         relaxLevel={relaxLevel}
+        onSyncResult={handleSyncResult}
       />
       {/* MapView container */}
       <div className="absolute inset-0 md:relative md:flex-1 md:order-2 z-0">

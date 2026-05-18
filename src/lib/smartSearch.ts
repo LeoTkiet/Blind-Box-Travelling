@@ -1,10 +1,3 @@
-// ============================================================
-// lib/smartSearch.ts — Module 8: Smart Location Search Engine
-// Pipeline 3 tầng: LLM Parser → Smart Filter → Geo-Semantic Rerank
-// ============================================================
-
-// --------------- TYPES ---------------
-
 export interface SmartSearchInput {
   query: string;            // Câu hỏi tự do của user
   selectedTags: string[];   // Các category badge đã chọn (VD: ["cafe", "restaurant"])
@@ -420,3 +413,4 @@ export async function runSmartSearch(input: SmartSearchInput): Promise<SmartSear
     },
   };
 }
+

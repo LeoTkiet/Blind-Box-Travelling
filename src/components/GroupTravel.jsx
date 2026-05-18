@@ -1,53 +1,147 @@
-'use client'; 
+'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Users, Sparkles, LogOut } from 'lucide-react';
 
 //1. KHỞI TẠO SUPABASE CLIENT
 const supabase = createClient();
 
-export default function GroupRoom({ embedded = false }) {
-  // --- STATE MANAGEMENT  ---
-  const [userId, setUserId] = useState(null); // Lưu ID ẩn danh
-  const [roomCode, setRoomCode] = useState(''); // Mã phòng hiện tại
-  const [inputCode, setInputCode] = useState(''); // Mã người dùng nhập vào ô text
-  const [members, setMembers] = useState([]); // Mảng chứa danh sách thành viên
+// ─── Design tokens ─────────────────────────────────────────────────────────────
+const T = {
+  bg: '#ffffff', bgSubtle: '#f8fafc', bgMuted: '#f1f5f9',
+  border: '#e2e8f0', borderDark: '#cbd5e1',
+  text: '#0f172a', textMuted: '#64748b', textLight: '#94a3b8',
+  accent: '#0f172a', accentHov: '#1e293b',
+  cyan: '#06b6d4', cyanLight: '#cffafe',
+  green: '#16a34a', greenLight: '#dcfce7',
+  red: '#dc2626',
+};
 
   // --- 1.1: ĐĂNG NHẬP ẨN DANH NGAY KHI MỞ TRANG ---
   useEffect(() => {
     if (!supabase) return;
 
-    const loginAnonymously = async () => {
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.error('Lỗi đăng nhập ẩn danh:', error.message);
-      } else if (data?.user) {
-        // Lưu lại ID của user để vào phòng
-        setUserId(data.user.id); 
+// ─── Member Row ─────────────────────────────────────────────────────────────────
+function MemberRow({ member, index, userId, memberResults }) {
+  const isMe = member.user_id === userId;
+  const result = memberResults[member.user_id];
+  const shortId = member.user_id?.slice(-6)?.toUpperCase() ?? `#${index + 1}`;
+
+  return (
+    <li style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '10px 12px', borderRadius: '12px', gap: '10px',
+      background: isMe ? '#f0fdf4' : T.bgSubtle,
+      border: `1px solid ${isMe ? '#bbf7d0' : T.border}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+        <div style={{
+          width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
+          background: isMe ? T.accent : T.bgMuted,
+          border: `2px solid ${isMe ? T.accent : T.borderDark}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '0.72rem', fontWeight: 800,
+          color: isMe ? '#fff' : T.textMuted,
+        }}>
+          {index + 1}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: T.text }}>
+            {isMe ? 'Bạn' : `Thành viên …${shortId}`}
+          </p>
+          {result ? (
+            <p style={{ margin: 0, fontSize: '0.68rem', color: T.cyan }}>
+              🎁 Đã roll hộp mù
+            </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: '0.68rem', color: T.textLight }}>Đang chờ roll...</p>
+          )}
+        </div>
+      </div>
+      {result
+        ? <span style={chip({ background: T.cyanLight, color: T.cyan, flexShrink: 0 })}>Đã roll</span>
+        : <span style={chip({ background: T.bgMuted, color: T.textMuted, flexShrink: 0 })}>⏳</span>
       }
-    };
-    loginAnonymously();
+    </li>
+  );
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────────────
+export default function GroupRoom({ embedded = false, currentResult, onSyncBlindBox }) {
+  const [userId, setUserId]           = useState(null);
+  const [roomCode, setRoomCode]       = useState('');
+  const [inputCode, setInputCode]     = useState('');
+  const [members, setMembers]         = useState([]);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [entryMode, setEntryMode]     = useState(null);
+  const [memberResults, setMemberResults] = useState({});
+
+  // ── Chat state ──────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab]     = useState('members'); // 'members' | 'chat'
+  const [messages, setMessages]       = useState([]);
+  const [chatInput, setChatInput]     = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const chatEndRef = useRef(null);
+
+  const channelRef      = useRef(null);
+  const myRollTimeRef   = useRef(null);
+  const prevResultRef   = useRef(null);
+
+  // ── Sync presence ──────────────────────────────────────────────────────────
+  const syncMembers = useCallback((ch) => {
+    const state = ch.presenceState();
+    setOnlineCount(Object.keys(state).length);
+    setMembers(Object.entries(state).map(([key, metas]) => {
+      const m = metas?.[metas.length - 1] ?? {};
+      return { user_id: m.user_id || key, joined_at: m.joined_at, status: m.status || '' };
+    }));
   }, []);
 
-  // --- TẠO MÃ PHÒNG NGẪU NHIÊN ---
-  const handleCreateRoom = () => {
-    // Sinh chuỗi ngẫu nhiên 5 ký tự 
-    const newCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-    setRoomCode(newCode);
-  };
+  const leaveRoom = useCallback(() => {
+    setRoomCode(''); setMembers([]); setOnlineCount(0);
+    setMemberResults({}); setEntryMode(null);
+    setMessages([]); setChatInput(''); setUnreadCount(0); setActiveTab('members');
+    myRollTimeRef.current = null; prevResultRef.current = null;
+  }, []);
 
-  const handleJoinRoom = () => {
-    const normalizedCode = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // ── Anonymous auth ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) { setUserId(data.user.id); return; }
+      supabase.auth.signInAnonymously().then(({ data: d }) => {
+        if (d?.user) setUserId(d.user.id);
+      });
+    });
+  }, []);
 
-    if (normalizedCode.length === 5) {
-      setRoomCode(normalizedCode);
-    } else {
-      alert("Mã phòng phải có 5 ký tự!");
-    }
-  };
+  // ── Watch currentResult: auto-broadcast when user rolls ────────────────────
+  useEffect(() => {
+    if (!currentResult || !roomCode || !channelRef.current || !userId) return;
+    if (currentResult === prevResultRef.current) return;
+    prevResultRef.current = currentResult;
+    myRollTimeRef.current = Date.now();
 
-  // --- 2: KẾT NỐI REALTIME  ---
+    // update own presence
+    channelRef.current.track({
+      user_id: userId,
+      joined_at: new Date().toLocaleTimeString(),
+      status: 'Đã roll',
+    });
+
+    // mark own result locally
+    setMemberResults(prev => ({ ...prev, [userId]: currentResult }));
+
+    // broadcast to room
+    channelRef.current.send({
+      type: 'broadcast',
+      event: 'blind_box_result',
+      payload: { user_id: userId, result: currentResult, ts: Date.now() },
+    });
+  }, [currentResult, roomCode, userId]);
+
+  // ── Realtime channel ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomCode || !userId || !supabase) return;
 
@@ -76,11 +170,49 @@ export default function GroupRoom({ embedded = false }) {
 
     // CLEANUP FUNCTION (Giống hàm Hủy - Destructor trong C++)
     return () => {
-      supabase.removeChannel(roomChannel); // Hủy lắng nghe, giải phóng bộ nhớ!
+      channelRef.current = null;
+      setMessages([]);
+      supabase.removeChannel(ch);
     };
-  }, [roomCode, userId]); 
+  }, [roomCode, userId, entryMode, syncMembers, leaveRoom, onSyncBlindBox]);
 
-  // --- GIAO DIỆN (UI) ---
+  // ── Chat: auto-scroll ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setUnreadCount(0);
+    }
+  }, [messages, activeTab]);
+
+  // ── Chat: send ──────────────────────────────────────────────────────────────
+  const sendChat = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || !channelRef.current || !userId) return;
+    const ts = Date.now();
+    const shortId = userId.slice(-6).toUpperCase();
+    setMessages(prev => [...prev, { id: ts, userId, shortId, text, ts, isMe: true }]);
+    setChatInput('');
+    await channelRef.current.send({
+      type: 'broadcast', event: 'group_chat',
+      payload: { user_id: userId, shortId, text, ts },
+    });
+  }, [chatInput, userId]);
+
+  // ── Room entry ─────────────────────────────────────────────────────────────
+  const handleCreateRoom = () => {
+    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+    setEntryMode('host');
+    setRoomCode(code);
+  };
+
+  const handleJoinRoom = () => {
+    const code = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length !== 5) { alert('Mã phòng phải có 5 ký tự!'); return; }
+    setEntryMode('guest');
+    setRoomCode(code);
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className={`${embedded ? 'w-full' : 'min-h-screen bg-[#f8fafc] py-10 px-4'} flex flex-col items-center font-sans`}>
       <div className={`w-full ${embedded ? '' : 'max-w-md bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] p-8 border border-slate-100'}`}>
@@ -124,6 +256,8 @@ export default function GroupRoom({ embedded = false }) {
               <span className="flex-shrink-0 mx-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">hoặc</span>
               <div className="flex-grow border-t border-slate-200"></div>
             </div>
+          )}
+        </div>
 
             <div className="flex gap-2">
               <input 
@@ -138,8 +272,37 @@ export default function GroupRoom({ embedded = false }) {
                 onClick={handleJoinRoom}
                 className="bg-slate-900 hover:bg-black text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center active:scale-95"
               >
-                Vào
+                ✨ Tạo phòng mới
               </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ flex: 1, height: '1px', background: T.border }} />
+                <span style={{ fontSize: '0.7rem', color: T.textLight, fontWeight: 600 }}>hoặc</span>
+                <div style={{ flex: 1, height: '1px', background: T.border }} />
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="text" placeholder="Mã phòng (5 ký tự)"
+                  value={inputCode}
+                  onChange={e => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                  maxLength={5}
+                  style={{
+                    flex: 1, padding: '0.75rem 1rem', borderRadius: '10px',
+                    border: `1.5px solid ${T.border}`, background: T.bgSubtle,
+                    fontSize: '0.85rem', fontWeight: 800, letterSpacing: '0.2em',
+                    color: T.text, outline: 'none', textAlign: 'center', textTransform: 'uppercase',
+                  }}
+                  onFocus={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.bg; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bgSubtle; }}
+                />
+                <button onClick={handleJoinRoom}
+                  style={{ padding: '0.75rem 1rem', borderRadius: '10px', background: T.accent, color: '#fff', border: 'none', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.accentHov}
+                  onMouseLeave={e => e.currentTarget.style.background = T.accent}
+                >
+                  Vào
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -187,6 +350,6 @@ export default function GroupRoom({ embedded = false }) {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
