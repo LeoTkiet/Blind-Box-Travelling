@@ -1,8 +1,9 @@
 'use client'; 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Users, Sparkles, LogOut } from 'lucide-react';
+// Bổ sung thêm MessageSquare để làm icon Chat giống trong ảnh của bạn
+import { Users, Sparkles, LogOut, MessageSquare, Send } from 'lucide-react';
 
 //1. KHỞI TẠO SUPABASE CLIENT
 const supabase = createClient();
@@ -13,6 +14,13 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
   const [roomCode, setRoomCode] = useState(''); // Mã phòng hiện tại
   const [inputCode, setInputCode] = useState(''); // Mã người dùng nhập vào ô text
   const [members, setMembers] = useState([]); // Mảng chứa danh sách thành viên
+  
+  // State quản lý Tab hiển thị (Thành viên hoặc Chat) theo đúng ảnh image_18168e.png
+  const [activeTab, setActiveTab] = useState('members'); 
+  const [chatInput, setChatInput] = useState('');
+  const [messages, setMessages] = useState([
+    { id: '1', sender: 'Hệ thống', text: 'Chào mừng bạn đến với phòng trò chuyện nhóm!', isSystem: true }
+  ]);
 
   // --- 1.1: ĐĂNG NHẬP ẨN DANH NGAY KHI MỞ TRANG ---
   useEffect(() => {
@@ -80,6 +88,19 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
     };
   }, [roomCode, userId]); 
 
+  // Xử lý gửi tin nhắn local (bạn có thể tích hợp Broadcast Broadcast của Supabase sau)
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+    setMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      sender: 'Bạn',
+      text: chatInput.trim(),
+      isSystem: false
+    }]);
+    setChatInput('');
+  };
+
   // --- GIAO DIỆN (UI) ---
   return (
     <div className={`${embedded ? 'w-full' : 'min-h-screen bg-[#f8fafc] py-10 px-4'} flex flex-col items-center font-sans`}>
@@ -144,46 +165,106 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
           </div>
         ) : (
           /* Nếu đã vào phòng -> Hiển thị phòng chờ */
-          <div className="space-y-6">
+          <div className="space-y-5">
             
-            {/* BOX HIỂN THỊ MÃ PHÒNG */}
+            {/* BOX HIỂN THỊ MÃ PHÒNG (Đúng ảnh image_18168e.png) */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center relative overflow-hidden">
-              <p className="text-[10px] text-slate-500 font-bold mb-2 uppercase tracking-[0.2em]">Mã phòng của bạn</p>
+              <p className="text-[10px] text-slate-500 font-bold mb-1 uppercase tracking-[0.2em]">Mã phòng</p>
               <p className="text-4xl font-black text-slate-900 tracking-[0.25em]">{roomCode}</p>
-              <p className="text-[11px] text-slate-500 font-medium mt-3">Chia sẻ mã này để mời thành viên</p>
+              <p className="text-[11px] text-slate-400 font-medium mt-2">Chia sẻ mã để mời thành viên</p>
             </div>
 
-            {/* DANH SÁCH THÀNH VIÊN */}
-            <div>
-              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">Thành viên ({members.length}/4)</h3>
-              
-              <ul className="space-y-2">
-                {members.map((member, idx) => (
-                  <li key={idx} className="flex items-center justify-between bg-white border border-slate-200 p-3 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-slate-900 text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px]">
-                        {idx + 1}
-                      </div>
-                      <span className="text-[13px] font-bold text-slate-800">
-                        {member.user_id === userId ? 'Bạn (Host)' : `Người chơi ${idx + 1}`}
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md uppercase tracking-wider">
-                      {member.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+            {/* TAB SWITCHER (Đúng nguyên mẫu thiết kế [Thành viên] [Chat] trong ảnh) */}
+            <div className="flex bg-slate-100 p-1 rounded-xl">
+              <button 
+                onClick={() => setActiveTab('members')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-[12px] font-bold rounded-lg transition-all ${activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+              >
+                <Users size={14} />
+                Thành viên
+              </button>
+              <button 
+                onClick={() => setActiveTab('chat')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-[12px] font-bold rounded-lg transition-all ${activeTab === 'chat' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+              >
+                <MessageSquare size={14} />
+                Chat
+              </button>
             </div>
+
+            {/* HIỂN THỊ NỘI DUNG THEO TAB ĐƯỢC CHỌN */}
+            {activeTab === 'members' ? (
+              <div className="space-y-4">
+                {/* Khung thông báo màu xanh ngọc lam nhẹ nhàng giống hệt ảnh mẫu */}
+                <div className="bg-cyan-50/70 border border-cyan-100 rounded-xl p-3.5 text-[12px] text-cyan-800 leading-relaxed font-medium">
+                  💡 Khi bất kỳ ai trong phòng roll hộp mù, kết quả sẽ tự động hiển thị cho tất cả thành viên. Ai roll sau cùng sẽ là kết quả mới nhất cho cả nhóm.
+                </div>
+
+                <div>
+                  <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">Thành viên · {members.length} / 4</h3>
+                  <ul className="space-y-2">
+                    {members.map((member, idx) => (
+                      <li key={idx} className="flex items-center justify-between bg-white border border-slate-200 p-3 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-slate-900 text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px]">
+                            {idx + 1}
+                          </div>
+                          <span className="text-[13px] font-bold text-slate-800">
+                            {member.user_id === userId ? 'Bạn (Host)' : `Thành viên ${idx + 1}`}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md uppercase tracking-wider">
+                          {member.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              /* TAB CHAT: Khung hội thoại nhóm tối giản trắng đen tinh tế */
+              <div className="flex flex-col h-[260px] border border-slate-200 rounded-xl bg-slate-50/50 overflow-hidden">
+                <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-[12px]">
+                  {messages.map((msg) => (
+                    <div key={msg.id} className={`flex flex-col ${msg.isSystem ? 'items-center' : msg.sender === 'Bạn' ? 'items-end' : 'items-start'}`}>
+                      {msg.isSystem ? (
+                        <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">{msg.text}</span>
+                      ) : (
+                        <>
+                          <span className="text-[10px] font-bold text-slate-400 mb-0.5 px-1">{msg.sender}</span>
+                          <span className={`px-3 py-2 rounded-2xl max-w-[85%] font-medium break-words shadow-sm ${msg.sender === 'Bạn' ? 'bg-slate-900 text-white rounded-tr-none' : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none'}`}>
+                            {msg.text}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <form onSubmit={handleSendMessage} className="p-2 bg-white border-t border-slate-200 flex gap-1.5">
+                  <input 
+                    type="text" 
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Nhập tin nhắn..."
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] font-medium outline-none focus:bg-white focus:border-slate-900 transition-all"
+                  />
+                  <button type="submit" className="bg-slate-900 text-white p-1.5 rounded-lg hover:bg-black transition-colors">
+                    <Send size={14} />
+                  </button>
+                </form>
+              </div>
+            )}
 
             {/* NÚT THOÁT */}
-            <button 
-              onClick={() => setRoomCode('')}
-              className="w-full mt-2 text-slate-500 hover:text-red-600 text-[11px] font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 py-2"
-            >
-              <LogOut size={14} />
-              Thoát phòng
-            </button>
+            <div className="pt-2 border-t border-slate-100">
+              <button 
+                onClick={() => setRoomCode('')}
+                className="w-full text-slate-400 hover:text-red-600 text-[11px] font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 py-1.5"
+              >
+                <LogOut size={14} />
+                Thoát phòng
+              </button>
+            </div>
           </div>
         )}
       </div>
