@@ -2,106 +2,153 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-// Bổ sung thêm MessageSquare để làm icon Chat giống trong ảnh của bạn
 import { Users, Sparkles, LogOut, MessageSquare, Send } from 'lucide-react';
 
-//1. KHỞI TẠO SUPABASE CLIENT
 const supabase = createClient();
 
 export default function GroupRoom({ embedded = false, currentResult, onSyncBlindBox }) {
-  // --- STATE MANAGEMENT  ---
-  const [userId, setUserId] = useState(null); // Lưu ID ẩn danh
-  const [roomCode, setRoomCode] = useState(''); // Mã phòng hiện tại
-  const [inputCode, setInputCode] = useState(''); // Mã người dùng nhập vào ô text
-  const [members, setMembers] = useState([]); // Mảng chứa danh sách thành viên
+  const [userId, setUserId] = useState(null); 
+  const [roomCode, setRoomCode] = useState(''); 
+  const [inputCode, setInputCode] = useState(''); 
+  const [members, setMembers] = useState([]); 
   
-  // State quản lý Tab hiển thị (Thành viên hoặc Chat) theo đúng ảnh image_18168e.png
   const [activeTab, setActiveTab] = useState('members'); 
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState([
-    { id: '1', sender: 'Hệ thống', text: 'Chào mừng bạn đến với phòng trò chuyện nhóm!', isSystem: true }
+    { id: '1', sender: 'Hệ thống', text: 'Chào mừng bạn đến với phòng nhóm! Cùng nhau roll địa điểm nhé.', isSystem: true }
   ]);
 
-  // --- 1.1: ĐĂNG NHẬP ẨN DANH NGAY KHI MỞ TRANG ---
+  const channelRef = useRef(null);
+  const lastResultRef = useRef(null); // Tấm khiên chống dội kết quả (Tránh 2 máy cứ đẩy qua đẩy lại vô tận)
+
   useEffect(() => {
     if (!supabase) return;
-
     const loginAnonymously = async () => {
       const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.error('Lỗi đăng nhập ẩn danh:', error.message);
-      } else if (data?.user) {
-        // Lưu lại ID của user để vào phòng
-        setUserId(data.user.id); 
-      }
+      if (!error && data?.user) setUserId(data.user.id); 
     };
     loginAnonymously();
   }, []);
 
-  // --- TẠO MÃ PHÒNG NGẪU NHIÊN ---
   const handleCreateRoom = () => {
-    // Sinh chuỗi ngẫu nhiên 5 ký tự 
     const newCode = Math.random().toString(36).substring(2, 7).toUpperCase();
     setRoomCode(newCode);
   };
 
   const handleJoinRoom = () => {
     const normalizedCode = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-    if (normalizedCode.length === 5) {
-      setRoomCode(normalizedCode);
-    } else {
-      alert("Mã phòng phải có 5 ký tự!");
-    }
+    if (normalizedCode.length === 5) setRoomCode(normalizedCode);
+    else alert("Mã phòng phải có 5 ký tự!");
   };
 
-  // --- 2: KẾT NỐI REALTIME  ---
+  // --- KẾT NỐI REALTIME & BROADCAST TỔNG HỢP ---
   useEffect(() => {
     if (!roomCode || !userId || !supabase) return;
 
+    // Khởi tạo kênh với config Broadcast bật sẵn
     const roomChannel = supabase.channel(`room_${roomCode}`, {
       config: {
-        presence: { key: userId }, // Định danh tôi là ai trong phòng
+        presence: { key: userId }, 
+        broadcast: { self: false } // Không tự nhận lại tin nhắn của chính mình
       },
     });
 
+    channelRef.current = roomChannel;
+
+    // 1. ĐỒNG BỘ DANH SÁCH THÀNH VIÊN VÀ CHỌN HOST
     roomChannel.on('presence', { event: 'sync' }, () => {
       const state = roomChannel.presenceState();
-      // Chuyển mảng object phức tạp thành mảng đơn giản để render UI
       const currentMembers = Object.keys(state).map((key) => state[key][0]);
+      
+      // FIX LỖI HOST: Sắp xếp danh sách theo thời gian join. Ai vào sớm nhất là Host!
+      currentMembers.sort((a, b) => a.joined_at - b.joined_at);
       setMembers(currentMembers);
     });
 
+    // 2. LẮNG NGHE TIN NHẮN CHAT TỪ NGƯỜI KHÁC
+    roomChannel.on('broadcast', { event: 'chat_message' }, (payload) => {
+      setMessages(prev => [...prev, payload.payload]);
+    });
+
+    // 3. FIX LỖI ROLL: LẮNG NGHE KẾT QUẢ ĐỊA ĐIỂM TỪ NGƯỜI KHÁC BẮN SANG
+    roomChannel.on('broadcast', { event: 'sync_result' }, (payload) => {
+      if (onSyncBlindBox && payload.payload) {
+        // Cập nhật khiên chắn để máy mình không phát lại kết quả này nữa
+        lastResultRef.current = payload.payload.name; 
+        
+        // Gọi hàm để update lên bản đồ
+        onSyncBlindBox(payload.payload);
+        
+        // Bắn luôn một tin nhắn hệ thống vào Chat Box cho mọi người cùng thấy
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          sender: 'Hệ thống',
+          text: `🎁 Ai đó vừa quay trúng địa điểm mới!`,
+          isSystem: true
+        }]);
+      }
+    });
+
+    // Đăng ký vào phòng
     roomChannel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         await roomChannel.track({
           user_id: userId,
-          joined_at: new Date().toLocaleTimeString(),
-          status: 'Đang chờ...',
+          joined_at: Date.now(), // Lưu timestamp chính xác bằng số để tính Host
+          status: 'Online',
         });
       }
     });
 
-    // CLEANUP FUNCTION (Giống hàm Hủy - Destructor trong C++)
     return () => {
-      supabase.removeChannel(roomChannel); // Hủy lắng nghe, giải phóng bộ nhớ!
+      supabase.removeChannel(roomChannel); 
     };
-  }, [roomCode, userId]); 
+  }, [roomCode, userId, onSyncBlindBox]); 
 
-  // Xử lý gửi tin nhắn local (bạn có thể tích hợp Broadcast Broadcast của Supabase sau)
+  // --- MỖI KHI MÌNH ROLL RA ĐỊA ĐIỂM, LẤY LOA PHÁT CHO CẢ PHÒNG ---
+  useEffect(() => {
+    if (roomCode && currentResult && channelRef.current) {
+      // Chỉ phát sóng nếu đây là kết quả mới hoàn toàn
+      if (lastResultRef.current !== currentResult.name) {
+        lastResultRef.current = currentResult.name;
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'sync_result',
+          payload: currentResult
+        });
+      }
+    }
+  }, [currentResult, roomCode]);
+
+  // --- XỬ LÝ NÚT GỬI TIN NHẮN CHAT ---
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    setMessages(prev => [...prev, {
+
+    const newMsg = {
       id: Date.now().toString(),
-      sender: 'Bạn',
+      sender: userId, 
       text: chatInput.trim(),
       isSystem: false
-    }]);
+    };
+
+    // Dùng bộ đàm phát tin nhắn này cho cả phòng
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'chat_message',
+        payload: newMsg
+      });
+    }
+
+    // In tin nhắn lên màn hình của chính mình
+    setMessages(prev => [...prev, newMsg]);
     setChatInput('');
   };
 
-  // --- GIAO DIỆN (UI) ---
+  // Lấy ID của người làm Host (Người đứng đầu danh sách sau khi đã sort)
+  const hostId = members.length > 0 ? members[0].user_id : null;
+
   return (
     <div className={`${embedded ? 'w-full' : 'min-h-screen bg-[#f8fafc] py-10 px-4'} flex flex-col items-center font-sans`}>
       <div className={`w-full ${embedded ? '' : 'max-w-md bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] p-8 border border-slate-100'}`}>
@@ -123,13 +170,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
           )}
         </div>
 
-        {!supabase && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
-            Thiếu cấu hình Supabase. Kiểm tra lại .env.local nhé.
-          </div>
-        )}
-
-        {/* Nếu chưa có phòng -> Hiển thị màn hình Tạo/Vào phòng */}
         {!roomCode ? (
           <div className="space-y-5">
             <button 
@@ -164,17 +204,13 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
             </div>
           </div>
         ) : (
-          /* Nếu đã vào phòng -> Hiển thị phòng chờ */
           <div className="space-y-5">
-            
-            {/* BOX HIỂN THỊ MÃ PHÒNG (Đúng ảnh image_18168e.png) */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center relative overflow-hidden">
               <p className="text-[10px] text-slate-500 font-bold mb-1 uppercase tracking-[0.2em]">Mã phòng</p>
               <p className="text-4xl font-black text-slate-900 tracking-[0.25em]">{roomCode}</p>
               <p className="text-[11px] text-slate-400 font-medium mt-2">Chia sẻ mã để mời thành viên</p>
             </div>
 
-            {/* TAB SWITCHER (Đúng nguyên mẫu thiết kế [Thành viên] [Chat] trong ảnh) */}
             <div className="flex bg-slate-100 p-1 rounded-xl">
               <button 
                 onClick={() => setActiveTab('members')}
@@ -192,10 +228,8 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
               </button>
             </div>
 
-            {/* HIỂN THỊ NỘI DUNG THEO TAB ĐƯỢC CHỌN */}
             {activeTab === 'members' ? (
               <div className="space-y-4">
-                {/* Khung thông báo màu xanh ngọc lam nhẹ nhàng giống hệt ảnh mẫu */}
                 <div className="bg-cyan-50/70 border border-cyan-100 rounded-xl p-3.5 text-[12px] text-cyan-800 leading-relaxed font-medium">
                   💡 Khi bất kỳ ai trong phòng roll hộp mù, kết quả sẽ tự động hiển thị cho tất cả thành viên. Ai roll sau cùng sẽ là kết quả mới nhất cho cả nhóm.
                 </div>
@@ -203,42 +237,58 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
                 <div>
                   <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3">Thành viên · {members.length} / 4</h3>
                   <ul className="space-y-2">
-                    {members.map((member, idx) => (
-                      <li key={idx} className="flex items-center justify-between bg-white border border-slate-200 p-3 rounded-xl">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-slate-900 text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px]">
-                            {idx + 1}
+                    {members.map((member, idx) => {
+                      const isMe = member.user_id === userId;
+                      const isHost = member.user_id === hostId;
+                      
+                      // Cách hiển thị Tên và Chức vụ chuẩn xác
+                      let displayName = isMe ? 'Bạn' : `Thành viên ${member.user_id.substring(0,4)}`;
+                      if (isHost) displayName += ' (Host)';
+
+                      return (
+                        <li key={idx} className="flex items-center justify-between bg-white border border-slate-200 p-3 rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-slate-900 text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px]">
+                              {idx + 1}
+                            </div>
+                            <span className={`text-[13px] font-bold ${isMe ? 'text-indigo-600' : 'text-slate-800'}`}>
+                              {displayName}
+                            </span>
                           </div>
-                          <span className="text-[13px] font-bold text-slate-800">
-                            {member.user_id === userId ? 'Bạn (Host)' : `Thành viên ${idx + 1}`}
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md uppercase tracking-wider">
+                            {member.status}
                           </span>
-                        </div>
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md uppercase tracking-wider">
-                          {member.status}
-                        </span>
-                      </li>
-                    ))}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               </div>
             ) : (
-              /* TAB CHAT: Khung hội thoại nhóm tối giản trắng đen tinh tế */
               <div className="flex flex-col h-[260px] border border-slate-200 rounded-xl bg-slate-50/50 overflow-hidden">
                 <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-[12px]">
-                  {messages.map((msg) => (
-                    <div key={msg.id} className={`flex flex-col ${msg.isSystem ? 'items-center' : msg.sender === 'Bạn' ? 'items-end' : 'items-start'}`}>
-                      {msg.isSystem ? (
-                        <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">{msg.text}</span>
-                      ) : (
-                        <>
-                          <span className="text-[10px] font-bold text-slate-400 mb-0.5 px-1">{msg.sender}</span>
-                          <span className={`px-3 py-2 rounded-2xl max-w-[85%] font-medium break-words shadow-sm ${msg.sender === 'Bạn' ? 'bg-slate-900 text-white rounded-tr-none' : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none'}`}>
-                            {msg.text}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  ))}
+                  {messages.map((msg) => {
+                    const isMe = msg.sender === userId;
+                    const isHost = msg.sender === hostId;
+                    
+                    let senderName = msg.isSystem ? 'Hệ thống' : (isMe ? 'Bạn' : `Thành viên ${msg.sender.substring(0,4)}`);
+                    if (!msg.isSystem && isHost && !isMe) senderName += ' (Host)';
+
+                    return (
+                      <div key={msg.id} className={`flex flex-col ${msg.isSystem ? 'items-center' : isMe ? 'items-end' : 'items-start'}`}>
+                        {msg.isSystem ? (
+                          <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">{msg.text}</span>
+                        ) : (
+                          <>
+                            <span className="text-[10px] font-bold text-slate-400 mb-0.5 px-1">{senderName}</span>
+                            <span className={`px-3 py-2 rounded-2xl max-w-[85%] font-medium break-words shadow-sm ${isMe ? 'bg-slate-900 text-white rounded-tr-none' : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none'}`}>
+                              {msg.text}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <form onSubmit={handleSendMessage} className="p-2 bg-white border-t border-slate-200 flex gap-1.5">
                   <input 
@@ -255,7 +305,6 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
               </div>
             )}
 
-            {/* NÚT THOÁT */}
             <div className="pt-2 border-t border-slate-100">
               <button 
                 onClick={() => setRoomCode('')}
