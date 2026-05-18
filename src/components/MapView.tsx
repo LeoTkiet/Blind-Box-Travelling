@@ -125,13 +125,17 @@ export default function MapView({ userLocation, radius, result }: Props) {
 
       resultMarkerRef.current?.remove();
       const el = document.createElement("div");
-      el.style.cssText = "width:28px;height:28px;border-radius:50%;background:#fff;border:2.5px solid #111827;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.2); cursor: default;"; // Đổi cursor thành default để user không tưởng là nhấn được
-      el.textContent = "📍";
+      el.style.cssText = "width:24px;height:24px;border-radius:50%;background:#111827;border:4px solid #fff;box-shadow:0 8px 16px rgba(0,0,0,0.25); cursor: default; transition: transform 0.2s;"; 
 
-      const popup = new mapboxgl.Popup({ offset: 18, closeButton: false }).setHTML(
-        `<div style="font-family:system-ui;min-width:160px">
-          <p style="margin:0 0 4px;font-weight:700;font-size:14px;color:#111827">${result.name}</p>
-          <p style="margin:0;font-size:12px;color:#6b7280">⭐ ${result.rating?.toFixed(1)} · ${result.category}</p>
+      const popup = new mapboxgl.Popup({ offset: 20, closeButton: false }).setHTML(
+        `<div style="font-family: ui-sans-serif, system-ui, sans-serif; min-width: 180px; padding: 4px;">
+          <p style="margin: 0 0 6px; font-weight: 800; font-size: 15px; color: #0f172a; line-height: 1.2;">${result.name}</p>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #64748b;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#111827" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span style="color: #111827">${result.rating?.toFixed(1)}</span>
+            <span style="color: #cbd5e1">|</span>
+            <span style="text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px">${result.category}</span>
+          </div>
         </div>`
       );
 
@@ -148,6 +152,75 @@ export default function MapView({ userLocation, radius, result }: Props) {
 
     applyResult();
   }, [mapReady, result]);
+
+  // 4. Vẽ đường đi tự động (Module 7)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !userLocation?.lng || !result?.lng) return;
+
+    const drawRoute = async () => {
+      try {
+        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+        const query = await fetch(
+          `https://api.mapbox.com/directions/v5/mapbox/driving/${userLocation.lng},${userLocation.lat};${result.lng},${result.lat}?geometries=geojson&overview=full&exclude=motorway&access_token=${token}`
+        );
+        const data = await query.json();
+        if (!data.routes?.length) return;
+
+        const routeData = data.routes[0].geometry;
+        const distanceKm = (data.routes[0].distance / 1000).toFixed(1);
+        const durationMin = Math.round(data.routes[0].duration / 60);
+
+        if (map.getSource("route-source")) {
+          (map.getSource("route-source") as mapboxgl.GeoJSONSource).setData(routeData);
+        } else {
+          map.addSource("route-source", { type: "geojson", data: routeData });
+          map.addLayer({
+            id: "route-layer", type: "line", source: "route-source",
+            layout: { "line-join": "round", "line-cap": "round" },
+            // Đổi màu đường dẫn thành Slate-800 để hợp tone
+            paint: { "line-color": "#1e293b", "line-width": 5, "line-opacity": 0.8 }
+          });
+        }
+
+        const midCoords = routeData.coordinates[Math.floor(routeData.coordinates.length / 2)];
+        const oldPopups = document.getElementsByClassName('route-info-popup');
+        while (oldPopups[0]) oldPopups[0].remove();
+
+        const mapboxgl = (await import("mapbox-gl")).default;
+        
+        // UI Mới cho Popup Route: Thay thế 🛵 bằng icon SVG Navigation
+        new mapboxgl.Popup({ closeButton: false, className: 'route-info-popup', offset: [0, -10] })
+          .setLngLat(midCoords as [number, number])
+          .setHTML(`
+            <style>
+              .route-info-popup .mapboxgl-popup-content {
+                background: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                border: none !important;
+              }
+              .route-info-popup .mapboxgl-popup-tip {
+                display: none !important;
+              }
+            </style>
+            <div style="background: white; color: #0f172a; padding: 8px 16px; border-radius: 30px; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+              <span>${distanceKm} km · ${durationMin} phút</span>
+            </div>
+          `).addTo(map);
+
+        const bounds = routeData.coordinates.reduce((b: any, c: any) => [
+          [Math.min(b[0][0], c[0]), Math.min(b[0][1], c[1])],
+          [Math.max(b[1][0], c[0]), Math.max(b[1][1], c[1])]
+        ], [[routeData.coordinates[0][0], routeData.coordinates[0][1]], [routeData.coordinates[0][0], routeData.coordinates[0][1]]]);
+
+        map.fitBounds(bounds, { padding: 80, duration: 1500 });
+      } catch (e) { console.error("Lỗi vẽ đường:", e); }
+    };
+
+    drawRoute();
+  }, [mapReady, userLocation, result]);
 
   // 4. Vẽ đường đi tự động (Module 7)
   useEffect(() => {
