@@ -130,8 +130,8 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -147,6 +147,25 @@ interface FilterResult {
   relaxLevel: number;
 }
 
+/**
+ * Tính delta latitude/longitude tương ứng với bán kính (km).
+ * Đây là bounding box hình chữ nhật bao quanh vòng tròn bán kính r.
+ * Mục đích: pre-filter ở cấp DB để giảm số hàng kéo về RAM trước khi
+ * chạy Haversine chính xác.
+ */
+function computeBoundingBox(lat: number, lng: number, radiusKm: number) {
+  const R = 6371; // bán kính Trái Đất (km)
+  const deltaLat = (radiusKm / R) * (180 / Math.PI);
+  const deltaLng =
+    (radiusKm / (R * Math.cos((lat * Math.PI) / 180))) * (180 / Math.PI);
+  return {
+    minLat: lat - deltaLat,
+    maxLat: lat + deltaLat,
+    minLng: lng - deltaLng,
+    maxLng: lng + deltaLng,
+  };
+}
+
 export async function smartFilter(
   intent: ParsedIntent,
   lat: number,
@@ -155,6 +174,11 @@ export async function smartFilter(
 ): Promise<FilterResult> {
   const supabase = await createClient();
 
+  // --- Bounding Box Pre-filter ---
+  // Thu hẹp không gian tìm kiếm bằng hình chữ nhật địa lý TRƯỚC khi kéo dữ liệu về.
+  // Haversine chính xác sẽ được chạy sau trên tập con nhỏ hơn nhiều.
+  const { minLat, maxLat, minLng, maxLng } = computeBoundingBox(lat, lng, radius);
+
   // Build base query — lấy tất cả cột cần thiết
   let query = supabase
     .from("locations")
@@ -162,7 +186,12 @@ export async function smartFilter(
       "name, category, lat, lng, rating, reviews_count, tags_price, tags_location, tags_audience, tags_time, tags_highlight, search_document, embedding"
     )
     .not("lat", "is", null)
-    .not("lng", "is", null);
+    .not("lng", "is", null)
+    // Bounding box: chỉ kéo về các hàng nằm trong hình chữ nhật ±radius
+    .gte("lat", minLat)
+    .lte("lat", maxLat)
+    .gte("lng", minLng)
+    .lte("lng", maxLng);
 
   // Lọc category ở cấp Database (nhanh nhất)
   if (intent.categories.length > 0) {
