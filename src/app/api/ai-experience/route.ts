@@ -13,12 +13,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     let destination = body.destination as Destination | undefined;
 
-    // Nếu không truyền destination thì tự lấy từ Supabase
-    if (!destination) {
-      const { getRandomDestination } = await import("@/lib/destination");
-      destination = await getRandomDestination(body.category);
-    }
-
     if (!destination || !destination.lat || !destination.lng) {
       const err: APIError = {
         code: "NO_DESTINATION",
