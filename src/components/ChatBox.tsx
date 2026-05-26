@@ -410,7 +410,7 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
                 ref={asideRef}
                 className={`
                 w-full flex-shrink-0 h-full 
-                bg-white md:shadow-[-10px_0_40px_rgba(0,0,0,0.05)] flex flex-col z-40 
+                bg-white md:shadow-[-10px_0_40px_rgba(0,0,0,0.05)] flex flex-col z-[60] md:z-40 
                 md:border-l border-gray-100 md:order-3
                 fixed md:relative inset-0 md:inset-auto
                 transition-transform duration-300 ease-in-out
@@ -425,7 +425,10 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
                     />
                 )}
                 {/* Thanh Tiêu đề (Header) */}
-                <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-white">
+                <div 
+                    className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-white"
+                    style={isMobile ? { paddingTop: "calc(1rem + env(safe-area-inset-top, 0px))" } : undefined}
+                >
                     <div className="relative flex-shrink-0">
                         <div className="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center">
                             <Bot size={19} className="text-white" />
@@ -539,7 +542,10 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
                 </div>
 
                 {/* Khu vực Nhập tin nhắn */}
-                <div className="px-5 py-4 border-t border-gray-100 bg-white">
+                <div 
+                    className="px-5 py-4 border-t border-gray-100 bg-white"
+                    style={isMobile ? { paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" } : undefined}
+                >
                     <form onSubmit={handleSubmit} className="flex items-center gap-2.5">
                         <input
                             ref={inputRef}
