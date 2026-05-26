@@ -333,7 +333,7 @@ export default function GroupRoom({
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     placeholder="Nhập tin nhắn..."
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] font-medium outline-none focus:bg-white focus:border-slate-900 transition-all"
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[12px] text-black font-medium outline-none focus:bg-white focus:border-slate-900 transition-all"
                   />
                   <button type="submit" className="bg-slate-900 text-white p-1.5 rounded-lg hover:bg-black transition-colors">
                     <Send size={14} />
