@@ -1,32 +1,63 @@
-'use client'; 
+'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Users, Sparkles, LogOut, MessageSquare, Send } from 'lucide-react';
+import type { UserLocation, LocationResult } from './AppContent';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const supabase = createClient();
 
-export default function GroupRoom({ embedded = false, currentResult, onSyncBlindBox, userLocation, onMembersUpdate }) {
-  const [userId, setUserId] = useState(null); 
-  const [roomCode, setRoomCode] = useState(''); 
-  const [inputCode, setInputCode] = useState(''); 
-  const [members, setMembers] = useState([]); 
-  
-  const [activeTab, setActiveTab] = useState('members'); 
-  const [chatInput, setChatInput] = useState('');
-  const [messages, setMessages] = useState([
+interface Message {
+  id: string;
+  sender: string;
+  text: string;
+  isSystem: boolean;
+}
+
+interface Member {
+  user_id: string;
+  joined_at: number;
+  status: string;
+  lat: number | null;
+  lng: number | null;
+}
+
+interface GroupRoomProps {
+  embedded?: boolean;
+  currentResult: LocationResult | null;
+  onSyncBlindBox?: (payload: LocationResult) => void;
+  userLocation: UserLocation | null;
+  onMembersUpdate?: (members: Member[]) => void;
+}
+
+export default function GroupRoom({
+  embedded = false,
+  currentResult,
+  onSyncBlindBox,
+  userLocation,
+  onMembersUpdate
+}: GroupRoomProps) {
+  const [userId, setUserId] = useState<string | null>(null);
+  const [roomCode, setRoomCode] = useState<string>('');
+  const [inputCode, setInputCode] = useState<string>('');
+  const [members, setMembers] = useState<Member[]>([]);
+
+  const [activeTab, setActiveTab] = useState<'members' | 'chat'>('members');
+  const [chatInput, setChatInput] = useState<string>('');
+  const [messages, setMessages] = useState<Message[]>([
     { id: '1', sender: 'Hệ thống', text: 'Chào mừng bạn đến với phòng nhóm! Cùng nhau roll địa điểm nhé.', isSystem: true }
   ]);
 
-  const channelRef = useRef(null);
-  const lastResultRef = useRef(null); 
-  const joinTimeRef = useRef(null); 
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const lastResultRef = useRef<string | null>(null);
+  const joinTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
     const loginAnonymously = async () => {
       const { data, error } = await supabase.auth.signInAnonymously();
-      if (!error && data?.user) setUserId(data.user.id); 
+      if (!error && data?.user) setUserId(data.user.id);
     };
     loginAnonymously();
   }, []);
@@ -48,8 +79,8 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
 
     const roomChannel = supabase.channel(`room_${roomCode}`, {
       config: {
-        presence: { key: userId }, 
-        broadcast: { self: false } 
+        presence: { key: userId },
+        broadcast: { self: false }
       },
     });
 
@@ -57,8 +88,8 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
 
     roomChannel.on('presence', { event: 'sync' }, () => {
       const state = roomChannel.presenceState();
-      const currentMembers = Object.keys(state).map((key) => state[key][0]);
-      
+      const currentMembers = Object.keys(state).map((key) => state[key][0] as unknown as Member);
+
       currentMembers.sort((a, b) => a.joined_at - b.joined_at);
       setMembers(currentMembers);
 
@@ -70,14 +101,14 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
     });
 
     roomChannel.on('broadcast', { event: 'chat_message' }, (payload) => {
-      setMessages(prev => [...prev, payload.payload]);
+      setMessages(prev => [...prev, payload.payload as Message]);
     });
 
     roomChannel.on('broadcast', { event: 'sync_result' }, (payload) => {
       if (onSyncBlindBox && payload.payload) {
-        lastResultRef.current = payload.payload.name; 
+        lastResultRef.current = payload.payload.name;
         onSyncBlindBox(payload.payload);
-        
+
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           sender: 'Hệ thống',
@@ -94,16 +125,16 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
           user_id: userId,
           joined_at: joinTimeRef.current,
           status: 'Online',
-          lat: userLocation?.lat || null, 
+          lat: userLocation?.lat || null,
           lng: userLocation?.lng || null
         });
       }
     });
 
     return () => {
-      supabase.removeChannel(roomChannel); 
+      supabase.removeChannel(roomChannel);
     };
-  }, [roomCode, userId, onSyncBlindBox, onMembersUpdate]); 
+  }, [roomCode, userId, onSyncBlindBox, onMembersUpdate]);
 
   // --- CẬP NHẬT TỌA ĐỘ GPS CỦA MÌNH LÊN PHÒNG LIÊN TỤC ---
   useEffect(() => {
@@ -131,13 +162,13 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
     }
   }, [currentResult, roomCode]);
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || !userId) return;
 
-    const newMsg = {
+    const newMsg: Message = {
       id: Date.now().toString(),
-      sender: userId, 
+      sender: userId,
       text: chatInput.trim(),
       isSystem: false
     };
@@ -159,7 +190,7 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
   return (
     <div className={`${embedded ? 'w-full' : 'min-h-screen bg-[#f8fafc] py-10 px-4'} flex flex-col items-center font-sans`}>
       <div className={`w-full ${embedded ? '' : 'max-w-md bg-white rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] p-8 border border-slate-100'}`}>
-        
+
         {/* HEADER PHONG CÁCH TẠP CHÍ */}
         <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
           <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -179,14 +210,14 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
 
         {!roomCode ? (
           <div className="space-y-5">
-            <button 
+            <button
               onClick={handleCreateRoom}
               className="w-full bg-slate-900 hover:bg-black text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-sm active:scale-95"
             >
               <Sparkles size={16} />
               Tạo phòng mới
             </button>
-            
+
             <div className="relative flex py-2 items-center">
               <div className="flex-grow border-t border-slate-200"></div>
               <span className="flex-shrink-0 mx-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">hoặc</span>
@@ -194,15 +225,15 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
             </div>
 
             <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="MÃ PHÒNG (5 KÝ TỰ)" 
+              <input
+                type="text"
+                placeholder="MÃ PHÒNG (5 KÝ TỰ)"
                 className="flex-1 border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 uppercase text-[13px] font-bold text-slate-900 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:bg-white focus:outline-none transition-all placeholder:text-slate-400 placeholder:font-semibold tracking-wider"
                 value={inputCode}
                 onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                 maxLength={5}
               />
-              <button 
+              <button
                 onClick={handleJoinRoom}
                 className="bg-slate-900 hover:bg-black text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center active:scale-95"
               >
@@ -219,14 +250,14 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
             </div>
 
             <div className="flex bg-slate-100 p-1 rounded-xl">
-              <button 
+              <button
                 onClick={() => setActiveTab('members')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 text-[12px] font-bold rounded-lg transition-all ${activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
               >
                 <Users size={14} />
                 Thành viên
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('chat')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 text-[12px] font-bold rounded-lg transition-all ${activeTab === 'chat' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
               >
@@ -247,8 +278,8 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
                     {members.map((member, idx) => {
                       const isMe = member.user_id === userId;
                       const isHost = member.user_id === hostId;
-                      
-                      let displayName = isMe ? 'Bạn' : `Thành viên ${member.user_id.substring(0,4)}`;
+
+                      let displayName = isMe ? 'Bạn' : `Thành viên ${member.user_id.substring(0, 4)}`;
                       if (isHost) displayName += ' (Host)';
 
                       return (
@@ -276,8 +307,8 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
                   {messages.map((msg) => {
                     const isMe = msg.sender === userId;
                     const isHost = msg.sender === hostId;
-                    
-                    let senderName = msg.isSystem ? 'Hệ thống' : (isMe ? 'Bạn' : `Thành viên ${msg.sender.substring(0,4)}`);
+
+                    let senderName = msg.isSystem ? 'Hệ thống' : (isMe ? 'Bạn' : `Thành viên ${msg.sender.substring(0, 4)}`);
                     if (!msg.isSystem && isHost && !isMe) senderName += ' (Host)';
 
                     return (
@@ -297,8 +328,8 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
                   })}
                 </div>
                 <form onSubmit={handleSendMessage} className="p-2 bg-white border-t border-slate-200 flex gap-1.5">
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     placeholder="Nhập tin nhắn..."
@@ -312,7 +343,7 @@ export default function GroupRoom({ embedded = false, currentResult, onSyncBlind
             )}
 
             <div className="pt-2 border-t border-slate-100">
-              <button 
+              <button
                 onClick={() => setRoomCode('')}
                 className="w-full text-slate-400 hover:text-red-600 text-[11px] font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 py-1.5"
               >
