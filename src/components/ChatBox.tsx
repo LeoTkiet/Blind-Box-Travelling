@@ -554,7 +554,7 @@ export default function ChatBox({ userLocation, result, aiPayload, onLocationUpd
                             onChange={(e) => setInput(e.target.value)}
                             disabled={isLoading || !userLocation}
                             placeholder={userLocation ? "Bạn muốn đi đâu..." : "Chia sẻ vị trí để bắt đầu..."}
-                            className="flex-1 text-[14px] px-4 py-3.5 rounded-2xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 focus:bg-white placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            className="flex-1 text-[14px] text-black px-4 py-3.5 rounded-2xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 focus:bg-white placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         />
                         <button
                             type="submit"
